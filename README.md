@@ -40,7 +40,9 @@ npm install
 ### 2. Get a Figma token
 
 1. Go to **Figma → Settings → Personal Access Tokens**
-2. Create a token with `file_content:read` scope
+2. Create a token with `file_content:read` and `file_version:read` scopes
+
+> **Note:** The `file_version:read` scope is required to show who edited each file in the change report. If your existing token lacks this scope, regenerate it with both scopes enabled.
 
 ### 3. Set up environment variables
 
