@@ -245,8 +245,9 @@ export function formatConsoleReport(
       const first = nodeChanges[0];
 
       if (nodeChanges.length > 5) {
+        const url = nodeUrl(fileKey, first.nodeId);
         lines.push(
-          `  📦 ${first.nodeName} (${first.nodeType}): ${nodeChanges.length} changes`,
+          `  📦 ${first.nodeName} (${first.nodeType}): ${nodeChanges.length} changes  ${url}`,
         );
         continue;
       }
@@ -256,21 +257,22 @@ export function formatConsoleReport(
           ? propertyLabel(change.property)
           : "";
         const overrideTag = change.isOverride ? " [override]" : "";
+        const url = nodeUrl(fileKey, change.nodeId);
         if (change.kind === "added") {
           lines.push(
-            `  ➕ ${change.nodeName} (${change.nodeType}) added`,
+            `  ➕ ${change.nodeName} (${change.nodeType}) added  ${url}`,
           );
         } else if (change.kind === "deleted") {
           lines.push(
-            `  ➖ ${change.nodeName} (${change.nodeType}) deleted`,
+            `  ➖ ${change.nodeName} (${change.nodeType}) deleted  ${url}`,
           );
         } else if (change.kind === "renamed") {
           lines.push(
-            `  🏷️  ${formatValue(change.oldValue)} → ${formatValue(change.newValue)} (renamed)`,
+            `  🏷️  ${formatValue(change.oldValue)} → ${formatValue(change.newValue)} (renamed)  ${url}`,
           );
         } else {
           lines.push(
-            `  ✏️  ${change.nodeName}.${propLabel}: ${formatValue(change.oldValue)} → ${formatValue(change.newValue)}${overrideTag}`,
+            `  ✏️  ${change.nodeName}.${propLabel}: ${formatValue(change.oldValue)} → ${formatValue(change.newValue)}${overrideTag}  ${url}`,
           );
         }
       }
@@ -304,8 +306,9 @@ export function formatSlackReport(
       const first = nodeChanges[0];
 
       if (nodeChanges.length > 5) {
+        const link = `<${nodeUrl(fileKey, first.nodeId)}|${first.nodeName}>`;
         lines.push(
-          `  📦 \`${first.nodeName}\` (${first.nodeType}): ${nodeChanges.length} changes`,
+          `  📦 ${link} (${first.nodeType}): ${nodeChanges.length} changes`,
         );
         continue;
       }
@@ -315,21 +318,22 @@ export function formatSlackReport(
           ? propertyLabel(change.property)
           : "";
         const overrideTag = change.isOverride ? " _[override]_" : "";
+        const link = `<${nodeUrl(fileKey, change.nodeId)}|${change.nodeName}>`;
         if (change.kind === "added") {
           lines.push(
-            `  ➕ \`${change.nodeName}\` (${change.nodeType}) added`,
+            `  ➕ ${link} (${change.nodeType}) added`,
           );
         } else if (change.kind === "deleted") {
           lines.push(
-            `  ➖ \`${change.nodeName}\` (${change.nodeType}) deleted`,
+            `  ➖ ${link} (${change.nodeType}) deleted`,
           );
         } else if (change.kind === "renamed") {
           lines.push(
-            `  🏷️ \`${formatValue(change.oldValue)}\` → \`${formatValue(change.newValue)}\` (renamed)`,
+            `  🏷️ ${link}: \`${formatValue(change.oldValue)}\` → \`${formatValue(change.newValue)}\` (renamed)`,
           );
         } else {
           lines.push(
-            `  ✏️ \`${change.nodeName}\`.${propLabel}: \`${formatValue(change.oldValue)}\` → \`${formatValue(change.newValue)}\`${overrideTag}`,
+            `  ✏️ ${link}.${propLabel}: \`${formatValue(change.oldValue)}\` → \`${formatValue(change.newValue)}\`${overrideTag}`,
           );
         }
       }
@@ -404,14 +408,15 @@ export function formatSlackBlocks(
       const first = nodeChanges[0];
 
       if (nodeChanges.length > 5) {
+        const link = `<${nodeUrl(fileKey, first.nodeId)}|${first.nodeName}>`;
         lines.push(
-          `📦 \`${first.nodeName}\` (${first.nodeType}): ${nodeChanges.length} changes`,
+          `📦 ${link} (${first.nodeType}): ${nodeChanges.length} changes`,
         );
         continue;
       }
 
       for (const change of nodeChanges) {
-        lines.push(formatBlockKitChange(change));
+        lines.push(formatBlockKitChange(fileKey, change));
       }
     }
 
@@ -479,19 +484,20 @@ export function chunkLines(lines: string[], maxChars: number): string[] {
   return chunks;
 }
 
-function formatBlockKitChange(change: ChangeEntry): string {
+function formatBlockKitChange(fileKey: string, change: ChangeEntry): string {
   const propLabel = change.property ? propertyLabel(change.property) : "";
   const overrideTag = change.isOverride ? " _[override]_" : "";
+  const link = `<${nodeUrl(fileKey, change.nodeId)}|${change.nodeName}>`;
 
   switch (change.kind) {
     case "added":
-      return `➕ \`${change.nodeName}\` (${change.nodeType}) added`;
+      return `➕ ${link} (${change.nodeType}) added`;
     case "deleted":
-      return `➖ \`${change.nodeName}\` (${change.nodeType}) deleted`;
+      return `➖ ${link} (${change.nodeType}) deleted`;
     case "renamed":
-      return `🏷️ \`${formatValue(change.oldValue)}\` → \`${formatValue(change.newValue)}\` (renamed)`;
+      return `🏷️ ${link}: \`${formatValue(change.oldValue)}\` → \`${formatValue(change.newValue)}\` (renamed)`;
     case "modified":
-      return `✏️ \`${change.nodeName}\`.${propLabel}: \`${formatValue(change.oldValue)}\` → \`${formatValue(change.newValue)}\`${overrideTag}`;
+      return `✏️ ${link}.${propLabel}: \`${formatValue(change.oldValue)}\` → \`${formatValue(change.newValue)}\`${overrideTag}`;
     default: {
       const _exhaustive: never = change.kind;
       return `Unknown change: ${_exhaustive}`;
@@ -606,4 +612,10 @@ function colorToHex(color: FigmaColor): string {
     return `${hex} ${Math.round(color.a * 100)}%`;
   }
   return hex;
+}
+
+export function nodeUrl(fileKey: string, nodeId: string): string {
+  // Figma URLs use hyphen-separated node IDs (e.g., "1:2" → "1-2")
+  const encodedId = nodeId.replace(/:/g, "-");
+  return `https://www.figma.com/design/${fileKey}?node-id=${encodedId}`;
 }
