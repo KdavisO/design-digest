@@ -111,7 +111,8 @@ async function main(): Promise<void> {
     console.log("\nSending Slack notification...");
 
     // Build Block Kit blocks for all files
-    const blocks = allChanges
+    const MAX_BLOCKS = 50;
+    let blocks = allChanges
       .filter((r) => r.changes.length > 0)
       .flatMap((r) => formatSlackBlocks(r.fileKey, r.changes));
 
@@ -120,6 +121,15 @@ async function main(): Promise<void> {
       blocks.push({
         type: "section",
         text: { type: "mrkdwn", text: `*AI Summary:*\n${aiSummary}` },
+      });
+    }
+
+    // Slack limits messages to 50 blocks — truncate with a note if exceeded
+    if (blocks.length > MAX_BLOCKS) {
+      blocks = blocks.slice(0, MAX_BLOCKS - 1);
+      blocks.push({
+        type: "context",
+        elements: [{ type: "mrkdwn", text: `⚠️ Output truncated (${MAX_BLOCKS} block limit). See full report in logs.` }],
       });
     }
 

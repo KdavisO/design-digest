@@ -344,7 +344,7 @@ export interface SlackBlock {
   type: string;
   text?: { type: string; text: string; emoji?: boolean };
   elements?: { type: string; text: string }[];
-  accessory?: { type: string; text: { type: string; text: string; emoji?: boolean }; url: string };
+  accessory?: { type: string; text: { type: string; text: string; emoji?: boolean }; url: string; action_id: string };
 }
 
 export function formatSlackBlocks(
@@ -377,6 +377,7 @@ export function formatSlackBlocks(
       type: "button",
       text: { type: "plain_text", text: "Open in Figma", emoji: true },
       url: figmaUrl,
+      action_id: `open_figma_${fileKey}`,
     },
   });
 
@@ -414,20 +415,12 @@ export function formatSlackBlocks(
       }
     }
 
-    // Slack blocks have a 3000 char limit per text field — split if needed
-    const text = lines.join("\n");
-    if (text.length <= 3000) {
+    // Slack blocks have a 3000 char limit per text field — chunk by char length
+    for (const chunk of chunkLines(lines, 3000)) {
       blocks.push({
         type: "section",
-        text: { type: "mrkdwn", text },
+        text: { type: "mrkdwn", text: chunk },
       });
-    } else {
-      for (let i = 0; i < lines.length; i += 20) {
-        blocks.push({
-          type: "section",
-          text: { type: "mrkdwn", text: lines.slice(i, i + 20).join("\n") },
-        });
-      }
     }
 
     blocks.push({ type: "divider" });
@@ -451,6 +444,35 @@ export function formatSlackBlocks(
   });
 
   return blocks;
+}
+
+function chunkLines(lines: string[], maxChars: number): string[] {
+  const truncatedSuffix = " …(truncated)";
+  const chunks: string[] = [];
+  let current = "";
+
+  for (let line of lines) {
+    // Ensure a single line never exceeds the limit
+    if (line.length > maxChars) {
+      line = line.slice(0, maxChars - truncatedSuffix.length) + truncatedSuffix;
+    }
+
+    const separator = current.length === 0 ? "" : "\n";
+    const candidate = current + separator + line;
+
+    if (candidate.length > maxChars && current.length > 0) {
+      chunks.push(current);
+      current = line;
+    } else {
+      current = candidate;
+    }
+  }
+
+  if (current.length > 0) {
+    chunks.push(current);
+  }
+
+  return chunks;
 }
 
 function formatBlockKitChange(change: ChangeEntry): string {
