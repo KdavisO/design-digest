@@ -488,6 +488,10 @@ function formatBlockKitChange(change: ChangeEntry): string {
       return `🏷️ \`${formatValue(change.oldValue)}\` → \`${formatValue(change.newValue)}\` (renamed)`;
     case "modified":
       return `✏️ \`${change.nodeName}\`.${propLabel}: \`${formatValue(change.oldValue)}\` → \`${formatValue(change.newValue)}\`${overrideTag}`;
+    default: {
+      const _exhaustive: never = change.kind;
+      return `Unknown change: ${_exhaustive}`;
+    }
   }
 }
 
