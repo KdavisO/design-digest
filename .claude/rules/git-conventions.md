@@ -1,6 +1,6 @@
 ---
 description: Git操作（ブランチ作成・コミット・PR）を行う際のルール
-globs:
+globs: []
 ---
 
 # Git規約
@@ -64,7 +64,7 @@ globs:
 - `Closes #XX` でIssueをリンクする
 - 本文に概要・変更内容・テスト方法を含める
 - assigneeに `KdavisO` を設定する
-- reviewerに `copilot` を設定する（`gh api` を使用）
+- reviewerに `copilot-pull-request-reviewer[bot]` を設定する（`gh api` を使用）
 
 ## 自動コミットルール
 

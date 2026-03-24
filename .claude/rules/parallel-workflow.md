@@ -1,3 +1,8 @@
+---
+description: 並列作業（git worktree）を行う際のルール
+globs: []
+---
+
 # 並列作業ルール
 
 ## worktree エージェントの起動
