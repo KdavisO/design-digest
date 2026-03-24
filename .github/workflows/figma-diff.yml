@@ -1,0 +1,46 @@
+name: DesignDigest
+
+on:
+  schedule:
+    # Weekdays at 10:00 JST (01:00 UTC)
+    - cron: "0 1 * * 1-5"
+  workflow_dispatch:
+
+jobs:
+  diff:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Download previous snapshot
+        uses: actions/download-artifact@v4
+        with:
+          name: design-digest-snapshot
+          path: snapshots
+        continue-on-error: true
+
+      - name: Run DesignDigest
+        run: npm run diff
+        env:
+          FIGMA_TOKEN: ${{ secrets.FIGMA_TOKEN }}
+          FIGMA_FILE_KEY: ${{ secrets.FIGMA_FILE_KEY }}
+          FIGMA_WATCH_PAGES: ${{ vars.FIGMA_WATCH_PAGES }}
+          FIGMA_WATCH_NODE_IDS: ${{ vars.FIGMA_WATCH_NODE_IDS }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          CLAUDE_SUMMARY_ENABLED: ${{ vars.CLAUDE_SUMMARY_ENABLED }}
+
+      - name: Upload snapshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: design-digest-snapshot
+          path: snapshots/
+          retention-days: 90
+          overwrite: true
