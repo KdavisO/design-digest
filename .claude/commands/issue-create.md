@@ -33,6 +33,6 @@ description: 以下の内容からGitHub Issueを作成してください。
    - `priority:low`: 機能追加・その他
 6. `gh issue create` でIssueを作成:
    ```
-   gh issue create --title "タイトル" --body "本文" --label "ラベル1,priority:{high|medium|low}"
+   gh issue create --title "タイトル" --body "本文" --label "bug,priority:high"
    ```
 7. 作成されたIssueのURLを表示する
