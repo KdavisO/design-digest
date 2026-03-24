@@ -10,7 +10,9 @@ import { loadSnapshot, saveSnapshot } from "./snapshot.js";
 import {
   detectChanges,
   buildReport,
+  formatSlackBlocks,
   formatSlackReport,
+  chunkLines,
 } from "./diff-engine.js";
 import { generateSummary } from "./claude-summary.js";
 import { sendSlackNotification } from "./notify.js";
@@ -108,14 +110,50 @@ async function main(): Promise<void> {
   // Send Slack notification
   if (!config.dryRun && config.slackWebhookUrl) {
     console.log("\nSending Slack notification...");
-    const slackParts = allChanges
+
+    // Build Block Kit blocks for all files
+    const MAX_BLOCKS = 50;
+    let blocks = allChanges
       .filter((r) => r.changes.length > 0)
-      .map((r) => formatSlackReport(r.fileKey, r.changes));
-    let slackText = slackParts.join("\n---\n");
+      .flatMap((r) => formatSlackBlocks(r.fileKey, r.changes));
+
     if (aiSummary) {
-      slackText += `\n---\n*AI Summary:*\n${aiSummary}`;
+      blocks.push({ type: "divider" });
+      blocks.push({
+        type: "section",
+        text: { type: "mrkdwn", text: "*AI Summary:*" },
+      });
+      const summaryChunks = chunkLines(aiSummary.split("\n"), 3000);
+      for (const chunk of summaryChunks) {
+        blocks.push({
+          type: "section",
+          text: { type: "mrkdwn", text: chunk },
+        });
+      }
     }
-    await sendSlackNotification(config.slackWebhookUrl, slackText);
+
+    // Slack limits messages to 50 blocks — truncate with a note if exceeded
+    if (blocks.length > MAX_BLOCKS) {
+      blocks = blocks.slice(0, MAX_BLOCKS - 1);
+      blocks.push({
+        type: "context",
+        elements: [{ type: "mrkdwn", text: `⚠️ Output truncated (${MAX_BLOCKS} block limit). See full report in logs.` }],
+      });
+    }
+
+    // Plain text fallback for notifications/emails
+    let fallbackText = allChanges
+      .filter((r) => r.changes.length > 0)
+      .map((r) => formatSlackReport(r.fileKey, r.changes))
+      .join("\n---\n");
+    if (aiSummary) {
+      fallbackText += `\n---\n*AI Summary:*\n${aiSummary}`;
+    }
+
+    await sendSlackNotification(config.slackWebhookUrl, {
+      text: fallbackText,
+      blocks,
+    });
     console.log("Slack notification sent.");
   } else if (config.dryRun) {
     console.log("\nDry run mode — skipping Slack notification.");

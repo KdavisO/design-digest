@@ -246,7 +246,7 @@ export function formatConsoleReport(
 
       if (nodeChanges.length > 5) {
         lines.push(
-          `  ${kindIcon(first.kind)} ${first.nodeName} (${first.nodeType}): ${nodeChanges.length} properties changed`,
+          `  📦 ${first.nodeName} (${first.nodeType}): ${nodeChanges.length} changes`,
         );
         continue;
       }
@@ -305,7 +305,7 @@ export function formatSlackReport(
 
       if (nodeChanges.length > 5) {
         lines.push(
-          `  ${kindIcon(first.kind)} \`${first.nodeName}\` (${first.nodeType}): ${nodeChanges.length} properties changed`,
+          `  📦 \`${first.nodeName}\` (${first.nodeType}): ${nodeChanges.length} changes`,
         );
         continue;
       }
@@ -338,6 +338,165 @@ export function formatSlackReport(
   }
 
   return lines.join("\n");
+}
+
+export interface SlackBlock {
+  type: string;
+  text?: { type: string; text: string; emoji?: boolean };
+  elements?: { type: string; text: string }[];
+  accessory?: { type: string; text: { type: string; text: string; emoji?: boolean }; url: string; action_id: string };
+}
+
+export function formatSlackBlocks(
+  fileKey: string,
+  changes: ChangeEntry[],
+): SlackBlock[] {
+  if (changes.length === 0) return [];
+
+  const blocks: SlackBlock[] = [];
+  const figmaUrl = `https://www.figma.com/design/${fileKey}`;
+
+  // Header
+  blocks.push({
+    type: "header",
+    text: {
+      type: "plain_text",
+      text: `DesignDigest: ${changes.length} change(s) detected`,
+      emoji: true,
+    },
+  });
+
+  // File info with link button
+  blocks.push({
+    type: "section",
+    text: {
+      type: "mrkdwn",
+      text: `File: \`${fileKey}\``,
+    },
+    accessory: {
+      type: "button",
+      text: { type: "plain_text", text: "Open in Figma", emoji: true },
+      url: figmaUrl,
+      action_id: `open_figma_${fileKey}`,
+    },
+  });
+
+  blocks.push({ type: "divider" });
+
+  // Changes grouped by page
+  const grouped = groupByPage(changes);
+
+  for (const [pageName, pageChanges] of Object.entries(grouped)) {
+    // Page header
+    blocks.push({
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: `*${pageName}*`,
+      },
+    });
+
+    // Build change lines for this page
+    const lines: string[] = [];
+    const nodeGrouped = groupByNode(pageChanges);
+
+    for (const nodeChanges of Object.values(nodeGrouped)) {
+      const first = nodeChanges[0];
+
+      if (nodeChanges.length > 5) {
+        lines.push(
+          `📦 \`${first.nodeName}\` (${first.nodeType}): ${nodeChanges.length} changes`,
+        );
+        continue;
+      }
+
+      for (const change of nodeChanges) {
+        lines.push(formatBlockKitChange(change));
+      }
+    }
+
+    // Slack blocks have a 3000 char limit per text field — chunk by char length
+    for (const chunk of chunkLines(lines, 3000)) {
+      blocks.push({
+        type: "section",
+        text: { type: "mrkdwn", text: chunk },
+      });
+    }
+
+    blocks.push({ type: "divider" });
+  }
+
+  // Summary counts
+  const added = changes.filter((c) => c.kind === "added").length;
+  const deleted = changes.filter((c) => c.kind === "deleted").length;
+  const modified = changes.filter((c) => c.kind === "modified").length;
+  const renamed = changes.filter((c) => c.kind === "renamed").length;
+
+  const parts: string[] = [];
+  if (added > 0) parts.push(`➕ ${added} added`);
+  if (deleted > 0) parts.push(`➖ ${deleted} deleted`);
+  if (modified > 0) parts.push(`✏️ ${modified} modified`);
+  if (renamed > 0) parts.push(`🏷️ ${renamed} renamed`);
+
+  blocks.push({
+    type: "context",
+    elements: [{ type: "mrkdwn", text: parts.join("  |  ") }],
+  });
+
+  return blocks;
+}
+
+export function chunkLines(lines: string[], maxChars: number): string[] {
+  const truncatedSuffix = " …(truncated)";
+  const chunks: string[] = [];
+  let current = "";
+
+  for (let line of lines) {
+    // Ensure a single line never exceeds the limit
+    if (line.length > maxChars) {
+      if (maxChars <= truncatedSuffix.length) {
+        line = line.slice(0, maxChars);
+      } else {
+        line = line.slice(0, maxChars - truncatedSuffix.length) + truncatedSuffix;
+      }
+    }
+
+    const separator = current.length === 0 ? "" : "\n";
+    const candidate = current + separator + line;
+
+    if (candidate.length > maxChars && current.length > 0) {
+      chunks.push(current);
+      current = line;
+    } else {
+      current = candidate;
+    }
+  }
+
+  if (current.length > 0) {
+    chunks.push(current);
+  }
+
+  return chunks;
+}
+
+function formatBlockKitChange(change: ChangeEntry): string {
+  const propLabel = change.property ? propertyLabel(change.property) : "";
+  const overrideTag = change.isOverride ? " _[override]_" : "";
+
+  switch (change.kind) {
+    case "added":
+      return `➕ \`${change.nodeName}\` (${change.nodeType}) added`;
+    case "deleted":
+      return `➖ \`${change.nodeName}\` (${change.nodeType}) deleted`;
+    case "renamed":
+      return `🏷️ \`${formatValue(change.oldValue)}\` → \`${formatValue(change.newValue)}\` (renamed)`;
+    case "modified":
+      return `✏️ \`${change.nodeName}\`.${propLabel}: \`${formatValue(change.oldValue)}\` → \`${formatValue(change.newValue)}\`${overrideTag}`;
+    default: {
+      const _exhaustive: never = change.kind;
+      return `Unknown change: ${_exhaustive}`;
+    }
+  }
 }
 
 function flattenNodes(node: FigmaNode): Record<string, FigmaNode> {
@@ -374,18 +533,6 @@ function groupByNode(changes: ChangeEntry[]): Record<string, ChangeEntry[]> {
   return grouped;
 }
 
-function kindIcon(kind: ChangeEntry["kind"]): string {
-  switch (kind) {
-    case "added":
-      return "➕";
-    case "deleted":
-      return "➖";
-    case "modified":
-      return "✏️";
-    case "renamed":
-      return "🏷️";
-  }
-}
 
 /** Properties that are instance overrides rather than master component changes */
 const OVERRIDE_PROPERTIES = new Set([

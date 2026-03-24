@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { detectChanges, formatConsoleReport, formatSlackReport } from "./diff-engine.js";
+import { detectChanges, formatConsoleReport, formatSlackReport, formatSlackBlocks } from "./diff-engine.js";
 import type { FigmaNode } from "./figma-client.js";
 
 function makeNode(overrides: Partial<FigmaNode> & { id: string; name: string }): FigmaNode {
@@ -388,7 +388,7 @@ describe("formatConsoleReport", () => {
       newValue: i + 1,
     }));
     const report = formatConsoleReport("abc123", changes);
-    expect(report).toContain("7 properties changed");
+    expect(report).toContain("7 changes");
   });
 });
 
@@ -409,5 +409,162 @@ describe("formatSlackReport", () => {
     ];
     const report = formatSlackReport("abc123", changes);
     expect(report).toContain("figma.com/design/abc123");
+  });
+});
+
+describe("formatSlackBlocks", () => {
+  it("returns empty array for no changes", () => {
+    expect(formatSlackBlocks("abc123", [])).toEqual([]);
+  });
+
+  it("includes header, file section with button, and divider", () => {
+    const changes = [
+      {
+        pageName: "Home",
+        nodeId: "1",
+        nodeName: "Button",
+        nodeType: "FRAME",
+        kind: "added" as const,
+      },
+    ];
+    const blocks = formatSlackBlocks("abc123", changes);
+
+    // Header block
+    const header = blocks.find((b) => b.type === "header");
+    expect(header).toBeDefined();
+    expect(header!.text!.text).toContain("1 change(s)");
+
+    // Button with Figma link
+    const fileSection = blocks.find((b) => b.accessory?.url);
+    expect(fileSection).toBeDefined();
+    expect(fileSection!.accessory!.url).toContain("figma.com/design/abc123");
+  });
+
+  it("groups changes by page with section headers", () => {
+    const changes = [
+      {
+        pageName: "Home",
+        nodeId: "1",
+        nodeName: "Header",
+        nodeType: "FRAME",
+        kind: "added" as const,
+      },
+      {
+        pageName: "Settings",
+        nodeId: "2",
+        nodeName: "Toggle",
+        nodeType: "FRAME",
+        kind: "deleted" as const,
+      },
+    ];
+    const blocks = formatSlackBlocks("abc123", changes);
+    const sections = blocks.filter(
+      (b) => b.type === "section" && b.text?.text?.startsWith("*"),
+    );
+    expect(sections).toHaveLength(2);
+    expect(sections[0].text!.text).toBe("*Home*");
+    expect(sections[1].text!.text).toBe("*Settings*");
+  });
+
+  it("includes context block with summary counts", () => {
+    const changes = [
+      {
+        pageName: "Home",
+        nodeId: "1",
+        nodeName: "A",
+        nodeType: "FRAME",
+        kind: "added" as const,
+      },
+      {
+        pageName: "Home",
+        nodeId: "2",
+        nodeName: "B",
+        nodeType: "FRAME",
+        kind: "deleted" as const,
+      },
+      {
+        pageName: "Home",
+        nodeId: "3",
+        nodeName: "C",
+        nodeType: "TEXT",
+        kind: "modified" as const,
+        property: "fontSize",
+        oldValue: 14,
+        newValue: 16,
+      },
+    ];
+    const blocks = formatSlackBlocks("abc123", changes);
+    const context = blocks.find((b) => b.type === "context");
+    expect(context).toBeDefined();
+    const text = context!.elements![0].text;
+    expect(text).toContain("1 added");
+    expect(text).toContain("1 deleted");
+    expect(text).toContain("1 modified");
+  });
+
+  it("includes renamed count in context", () => {
+    const changes = [
+      {
+        pageName: "Home",
+        nodeId: "1",
+        nodeName: "NewName",
+        nodeType: "FRAME",
+        kind: "renamed" as const,
+        property: "name",
+        oldValue: "OldName",
+        newValue: "NewName",
+      },
+    ];
+    const blocks = formatSlackBlocks("abc123", changes);
+    const context = blocks.find((b) => b.type === "context");
+    expect(context!.elements![0].text).toContain("1 renamed");
+  });
+
+  it("aggregates when same node has more than 5 changes", () => {
+    const changes = Array.from({ length: 7 }, (_, i) => ({
+      pageName: "Home",
+      nodeId: "1",
+      nodeName: "BigFrame",
+      nodeType: "FRAME",
+      kind: "modified" as const,
+      property: `prop${i}`,
+      oldValue: i,
+      newValue: i + 1,
+    }));
+    const blocks = formatSlackBlocks("abc123", changes);
+    const contentSections = blocks.filter(
+      (b) => b.type === "section" && b.text?.text && !b.text.text.startsWith("*") && !b.text.text.startsWith("File:"),
+    );
+    // Should have one section with aggregated "7 changes"
+    expect(contentSections.length).toBeGreaterThan(0);
+    const text = contentSections.map((b) => b.text!.text).join("\n");
+    expect(text).toContain("7 changes");
+  });
+
+  it("splits long content into multiple sections within 3000 char limit", () => {
+    // Create many changes to exceed 3000 chars
+    const changes = Array.from({ length: 50 }, (_, i) => ({
+      pageName: "Home",
+      nodeId: `node-${i}`,
+      nodeName: `VeryLongComponentName_${i}_${"x".repeat(40)}`,
+      nodeType: "FRAME",
+      kind: "modified" as const,
+      property: "fontSize",
+      oldValue: 14,
+      newValue: 16,
+    }));
+    const blocks = formatSlackBlocks("abc123", changes);
+    // All section text fields should be within 3000 chars
+    const contentSections = blocks.filter(
+      (b) => b.type === "section" && b.text?.type === "mrkdwn",
+    );
+    for (const section of contentSections) {
+      expect(section.text!.text.length).toBeLessThanOrEqual(3000);
+    }
+    // Should have been split into multiple sections (more than just the page header)
+    const changeSections = contentSections.filter(
+      (b) => !b.text!.text.startsWith("*") && !b.text!.text.startsWith("File:"),
+    );
+    expect(changeSections.length).toBeGreaterThan(1);
   });
 });
