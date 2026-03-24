@@ -246,7 +246,7 @@ export function formatConsoleReport(
 
       if (nodeChanges.length > 5) {
         lines.push(
-          `  ${kindIcon(first.kind)} ${first.nodeName} (${first.nodeType}): ${nodeChanges.length} properties changed`,
+          `  📦 ${first.nodeName} (${first.nodeType}): ${nodeChanges.length} changes`,
         );
         continue;
       }
@@ -305,7 +305,7 @@ export function formatSlackReport(
 
       if (nodeChanges.length > 5) {
         lines.push(
-          `  ${kindIcon(first.kind)} \`${first.nodeName}\` (${first.nodeType}): ${nodeChanges.length} properties changed`,
+          `  📦 \`${first.nodeName}\` (${first.nodeType}): ${nodeChanges.length} changes`,
         );
         continue;
       }
@@ -405,7 +405,7 @@ export function formatSlackBlocks(
 
       if (nodeChanges.length > 5) {
         lines.push(
-          `${kindIcon(first.kind)} \`${first.nodeName}\` (${first.nodeType}): ${nodeChanges.length} properties changed`,
+          `📦 \`${first.nodeName}\` (${first.nodeType}): ${nodeChanges.length} changes`,
         );
         continue;
       }
@@ -454,7 +454,11 @@ export function chunkLines(lines: string[], maxChars: number): string[] {
   for (let line of lines) {
     // Ensure a single line never exceeds the limit
     if (line.length > maxChars) {
-      line = line.slice(0, maxChars - truncatedSuffix.length) + truncatedSuffix;
+      if (maxChars <= truncatedSuffix.length) {
+        line = line.slice(0, maxChars);
+      } else {
+        line = line.slice(0, maxChars - truncatedSuffix.length) + truncatedSuffix;
+      }
     }
 
     const separator = current.length === 0 ? "" : "\n";
@@ -529,18 +533,6 @@ function groupByNode(changes: ChangeEntry[]): Record<string, ChangeEntry[]> {
   return grouped;
 }
 
-function kindIcon(kind: ChangeEntry["kind"]): string {
-  switch (kind) {
-    case "added":
-      return "➕";
-    case "deleted":
-      return "➖";
-    case "modified":
-      return "✏️";
-    case "renamed":
-      return "🏷️";
-  }
-}
 
 /** Properties that are instance overrides rather than master component changes */
 const OVERRIDE_PROPERTIES = new Set([

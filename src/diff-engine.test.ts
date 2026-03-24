@@ -388,7 +388,7 @@ describe("formatConsoleReport", () => {
       newValue: i + 1,
     }));
     const report = formatConsoleReport("abc123", changes);
-    expect(report).toContain("7 properties changed");
+    expect(report).toContain("7 changes");
   });
 });
 
@@ -535,10 +535,10 @@ describe("formatSlackBlocks", () => {
     const contentSections = blocks.filter(
       (b) => b.type === "section" && b.text?.text && !b.text.text.startsWith("*") && !b.text.text.startsWith("File:"),
     );
-    // Should have one section with aggregated "7 properties changed"
+    // Should have one section with aggregated "7 changes"
     expect(contentSections.length).toBeGreaterThan(0);
     const text = contentSections.map((b) => b.text!.text).join("\n");
-    expect(text).toContain("7 properties changed");
+    expect(text).toContain("7 changes");
   });
 
   it("splits long content into multiple sections within 3000 char limit", () => {
