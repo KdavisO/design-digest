@@ -676,6 +676,15 @@ describe("convertMarkdownToSlackMrkdwn", () => {
     );
   });
 
+  it("escapes reserved chars in URLs for Slack", () => {
+    expect(convertMarkdownToSlackMrkdwn("[link](https://example.com?a=1|b=2)")).toBe(
+      "<https://example.com?a=1%7Cb=2|link>",
+    );
+    expect(convertMarkdownToSlackMrkdwn("[link](https://example.com/a>b)")).toBe(
+      "<https://example.com/a%3Eb|link>",
+    );
+  });
+
   it("handles URLs with balanced parentheses", () => {
     expect(
       convertMarkdownToSlackMrkdwn("[Wiki](https://en.wikipedia.org/wiki/Foo_(bar))"),

@@ -620,6 +620,13 @@ export function nodeUrl(fileKey: string, nodeId: string): string {
   return `https://www.figma.com/design/${fileKey}?node-id=${encodedId}`;
 }
 
+/** Escape URL for use inside Slack link syntax `<url|text>` — encode chars that break parsing */
+function escapeSlackUrl(url: string): string {
+  return url
+    .replace(/>/g, "%3E")
+    .replace(/\|/g, "%7C");
+}
+
 /** Escape text for use inside Slack mrkdwn link syntax `<url|text>` */
 function escapeSlackLinkText(text: string): string {
   return text
@@ -721,7 +728,7 @@ function convertMarkdownLinksToSlack(text: string): string {
 
     const url = text.slice(urlStart, pos);
     result += text.slice(i, openBracket);
-    result += `<${url}|${escapeSlackLinkText(linkText)}>`;
+    result += `<${escapeSlackUrl(url)}|${escapeSlackLinkText(linkText)}>`;
     i = pos + 1;
   }
 
