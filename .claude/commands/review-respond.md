@@ -286,7 +286,9 @@ gh api --paginate repos/{owner}/{repo}/pulls/{PR番号}/reviews | jq -s '
 
 ### 4. 検証
 
-- `npm run lint` を実行して品質確認
+- `npm run lint` でlintエラーがないことを確認
+- `npm run typecheck` で型チェックエラーがないことを確認
+- `npm test` でテストが通ることを確認
 
 ### 5. コミット・プッシュ
 
