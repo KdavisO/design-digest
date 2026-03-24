@@ -74,7 +74,7 @@ Add these secrets to your repository (**Settings → Secrets and variables → A
 | Secret | Required | Description |
 |---|---|---|
 | `FIGMA_TOKEN` | Yes | Figma Personal Access Token |
-| `FIGMA_FILE_KEY` | Yes | Figma file key to monitor |
+| `FIGMA_FILE_KEY` | Yes | Figma file key(s) to monitor (comma-separated for multiple) |
 | `SLACK_WEBHOOK_URL` | No | Slack Incoming Webhook URL |
 | `ANTHROPIC_API_KEY` | No | Claude API key for AI summaries |
 
@@ -89,6 +89,14 @@ Optional variables (**Settings → Secrets and variables → Actions → Variabl
 The workflow runs automatically on weekdays at 10:00 JST. You can also trigger it manually from the Actions tab.
 
 ## Configuration
+
+### Monitor multiple files
+
+```
+FIGMA_FILE_KEY=abc123,def456,ghi789
+```
+
+Each file gets its own snapshot and appears as a separate section in the report.
 
 ### Watch specific pages
 

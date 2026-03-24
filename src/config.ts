@@ -1,6 +1,6 @@
 export interface Config {
   figmaToken: string;
-  figmaFileKey: string;
+  figmaFileKeys: string[];
   figmaWatchPages: string[];
   figmaWatchNodeIds: string[];
   slackWebhookUrl: string | undefined;
@@ -12,11 +12,14 @@ export interface Config {
 
 export function loadConfig(): Config {
   const figmaToken = env("FIGMA_TOKEN");
-  const figmaFileKey = env("FIGMA_FILE_KEY");
+  const figmaFileKeys = csvList("FIGMA_FILE_KEY");
+  if (figmaFileKeys.length === 0) {
+    throw new Error("Missing required environment variable: FIGMA_FILE_KEY");
+  }
 
   return {
     figmaToken,
-    figmaFileKey,
+    figmaFileKeys,
     figmaWatchPages: csvList("FIGMA_WATCH_PAGES"),
     figmaWatchNodeIds: csvList("FIGMA_WATCH_NODE_IDS"),
     slackWebhookUrl: process.env.SLACK_WEBHOOK_URL || undefined,
