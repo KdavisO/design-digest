@@ -13,6 +13,7 @@ import {
   formatSlackBlocks,
   formatSlackReport,
   chunkLines,
+  convertMarkdownToSlackMrkdwn,
 } from "./diff-engine.js";
 import { generateSummary } from "./claude-summary.js";
 import { sendSlackNotification } from "./notify.js";
@@ -118,12 +119,13 @@ async function main(): Promise<void> {
       .flatMap((r) => formatSlackBlocks(r.fileKey, r.changes));
 
     if (aiSummary) {
+      const slackSummary = convertMarkdownToSlackMrkdwn(aiSummary);
       blocks.push({ type: "divider" });
       blocks.push({
         type: "section",
         text: { type: "mrkdwn", text: "*AI Summary:*" },
       });
-      const summaryChunks = chunkLines(aiSummary.split("\n"), 3000);
+      const summaryChunks = chunkLines(slackSummary.split("\n"), 3000);
       for (const chunk of summaryChunks) {
         blocks.push({
           type: "section",
@@ -147,7 +149,7 @@ async function main(): Promise<void> {
       .map((r) => formatSlackReport(r.fileKey, r.changes))
       .join("\n---\n");
     if (aiSummary) {
-      fallbackText += `\n---\n*AI Summary:*\n${aiSummary}`;
+      fallbackText += `\n---\n*AI Summary:*\n${convertMarkdownToSlackMrkdwn(aiSummary)}`;
     }
 
     await sendSlackNotification(config.slackWebhookUrl, {

@@ -632,3 +632,29 @@ function escapeSlackLinkText(text: string): string {
 function slackNodeLink(fileKey: string, nodeId: string, nodeName: string): string {
   return `<${nodeUrl(fileKey, nodeId)}|${escapeSlackLinkText(nodeName)}>`;
 }
+
+/**
+ * Convert standard Markdown to Slack mrkdwn format.
+ *
+ * Handles the most common Markdown patterns that Claude API produces:
+ * - ATX headings (`## Title`) → bold (`*Title*`)
+ * - Bold (`**text**` / `__text__`) → `*text*`
+ * - Italic (`_text_`) stays the same (compatible)
+ * - Links (`[text](url)`) → Slack links (`<url|text>`)
+ * - Strikethrough (`~~text~~`) → `~text~`
+ */
+export function convertMarkdownToSlackMrkdwn(markdown: string): string {
+  return (
+    markdown
+      // ATX headings → bold
+      .replace(/^#{1,6}\s+(.+)$/gm, "*$1*")
+      // Bold: **text** or __text__ → *text*
+      // Use a two-pass approach to handle nested bold+italic
+      .replace(/\*\*(.+?)\*\*/g, "*$1*")
+      .replace(/__(.+?)__/g, "*$1*")
+      // Strikethrough: ~~text~~ → ~text~
+      .replace(/~~(.+?)~~/g, "~$1~")
+      // Links: [text](url) → <url|text>
+      .replace(/\[([^\]]+)\]\(([^)]+)\)/g, "<$2|$1>")
+  );
+}
