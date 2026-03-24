@@ -12,6 +12,7 @@ import {
   buildReport,
   formatSlackBlocks,
   formatSlackReport,
+  chunkLines,
 } from "./diff-engine.js";
 import { generateSummary } from "./claude-summary.js";
 import { sendSlackNotification } from "./notify.js";
@@ -120,8 +121,15 @@ async function main(): Promise<void> {
       blocks.push({ type: "divider" });
       blocks.push({
         type: "section",
-        text: { type: "mrkdwn", text: `*AI Summary:*\n${aiSummary}` },
+        text: { type: "mrkdwn", text: "*AI Summary:*" },
       });
+      const summaryChunks = chunkLines(aiSummary.split("\n"), 3000);
+      for (const chunk of summaryChunks) {
+        blocks.push({
+          type: "section",
+          text: { type: "mrkdwn", text: chunk },
+        });
+      }
     }
 
     // Slack limits messages to 50 blocks — truncate with a note if exceeded

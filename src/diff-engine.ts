@@ -446,7 +446,7 @@ export function formatSlackBlocks(
   return blocks;
 }
 
-function chunkLines(lines: string[], maxChars: number): string[] {
+export function chunkLines(lines: string[], maxChars: number): string[] {
   const truncatedSuffix = " …(truncated)";
   const chunks: string[] = [];
   let current = "";
