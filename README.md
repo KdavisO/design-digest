@@ -120,20 +120,20 @@ Set `ANTHROPIC_API_KEY` and `CLAUDE_SUMMARY_ENABLED=true`. The AI will summarize
 
 #### Claude API cost estimate
 
-DesignDigest uses **Claude Sonnet** (`claude-sonnet-4-20250514`) to generate change summaries. Each execution makes a single API call per Figma file with very low token usage.
+DesignDigest uses **Claude Sonnet** (`claude-sonnet-4-20250514`) to generate change summaries. Each workflow execution makes a single Claude API call that summarizes changes across all monitored Figma files, with very low token usage.
 
 | | Input tokens | Output tokens |
 |---|---|---|
-| Per execution (1 file, ~10 changes) | ~300–500 | ~200–400 |
-| Per execution (1 file, ~50 changes) | ~1,000–1,500 | ~400–800 |
+| Per execution (~10 total changes across watched files) | ~300–500 | ~200–400 |
+| Per execution (~50 total changes across watched files) | ~1,000–1,500 | ~400–800 |
 
 **Monthly cost estimates** (weekday runs = ~22 days/month):
 
 | Scenario | Monthly cost (USD) |
 |---|---|
-| 1 file, typical changes | ~$0.01–0.03 |
-| 3 files, typical changes | ~$0.03–0.10 |
-| 5 files, heavy changes | ~$0.10–0.25 |
+| 1–2 files, typical changes | ~$0.01–0.03 |
+| 3–5 files, typical changes | ~$0.03–0.10 |
+| 5+ files, heavy changes | ~$0.10–0.25 |
 
 Costs are **practically negligible** for most teams. Even with multiple files and frequent changes, monthly costs are unlikely to exceed $1.
 
