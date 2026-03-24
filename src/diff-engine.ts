@@ -8,10 +8,12 @@ export interface ChangeEntry {
   nodeId: string;
   nodeName: string;
   nodeType: string;
-  kind: "added" | "deleted" | "modified";
+  kind: "added" | "deleted" | "modified" | "renamed";
   property?: string;
   oldValue?: unknown;
   newValue?: unknown;
+  /** For INSTANCE nodes: whether this is an override change vs master component change */
+  isOverride?: boolean;
 }
 
 export interface ChangeReport {
@@ -90,53 +92,118 @@ export function detectChanges(
 
     const oldNodes = flattenNodes(oldPage);
     const newNodes = flattenNodes(newPage);
-    const allNodeIds = new Set([
-      ...Object.keys(oldNodes),
-      ...Object.keys(newNodes),
-    ]);
 
-    for (const nodeId of allNodeIds) {
-      const oldNode = oldNodes[nodeId];
-      const newNode = newNodes[nodeId];
+    const matchedOldIds = new Set<string>();
+    const matchedNewIds = new Set<string>();
 
-      if (!oldNode && newNode) {
-        changes.push({
-          pageName,
-          nodeId,
-          nodeName: newNode.name,
-          nodeType: newNode.type,
-          kind: "added",
-        });
-        continue;
+    // Pass 1: Match nodes by same ID (existing or modified)
+    for (const nodeId of Object.keys(oldNodes)) {
+      if (newNodes[nodeId]) {
+        matchedOldIds.add(nodeId);
+        matchedNewIds.add(nodeId);
+
+        const oldNode = oldNodes[nodeId];
+        const newNode = newNodes[nodeId];
+
+        // Detect rename
+        if (oldNode.name !== newNode.name) {
+          changes.push({
+            pageName,
+            nodeId,
+            nodeName: newNode.name,
+            nodeType: newNode.type,
+            kind: "renamed",
+            property: "name",
+            oldValue: oldNode.name,
+            newValue: newNode.name,
+          });
+        }
+
+        const diffs = diff(oldNode, newNode);
+        if (!diffs) continue;
+
+        const isInstance = newNode.type === "INSTANCE";
+
+        for (const d of diffs) {
+          const property = diffPath(d);
+          if (property === "children" || property === "name") continue;
+
+          const isOverride = isInstance && isOverrideProperty(property);
+
+          changes.push({
+            pageName,
+            nodeId,
+            nodeName: newNode.name,
+            nodeType: newNode.type,
+            kind: "modified",
+            property,
+            oldValue: "lhs" in d ? d.lhs : undefined,
+            newValue: "rhs" in d ? d.rhs : undefined,
+            ...(isInstance ? { isOverride } : {}),
+          });
+        }
       }
+    }
 
-      if (oldNode && !newNode) {
+    // Pass 2: Detect renames for nodes with changed IDs (same type + same parent structure)
+    const unmatchedOld = Object.entries(oldNodes).filter(([id]) => !matchedOldIds.has(id));
+    const unmatchedNew = Object.entries(newNodes).filter(([id]) => !matchedNewIds.has(id));
+
+    for (const [oldId, oldNode] of unmatchedOld) {
+      const match = unmatchedNew.find(
+        ([newId, newNode]) =>
+          !matchedNewIds.has(newId) &&
+          newNode.type === oldNode.type &&
+          newNode.name === oldNode.name,
+      );
+
+      if (match) {
+        const [newId, newNode] = match;
+        matchedOldIds.add(oldId);
+        matchedNewIds.add(newId);
+
+        const diffs = diff(oldNode, newNode);
+        if (diffs) {
+          for (const d of diffs) {
+            const property = diffPath(d);
+            if (property === "children" || property === "id") continue;
+
+            changes.push({
+              pageName,
+              nodeId: newId,
+              nodeName: newNode.name,
+              nodeType: newNode.type,
+              kind: "modified",
+              property,
+              oldValue: "lhs" in d ? d.lhs : undefined,
+              newValue: "rhs" in d ? d.rhs : undefined,
+            });
+          }
+        }
+      }
+    }
+
+    // Pass 3: Remaining unmatched = truly added/deleted
+    for (const [id, node] of unmatchedOld) {
+      if (!matchedOldIds.has(id)) {
         changes.push({
           pageName,
-          nodeId,
-          nodeName: oldNode.name,
-          nodeType: oldNode.type,
+          nodeId: id,
+          nodeName: node.name,
+          nodeType: node.type,
           kind: "deleted",
         });
-        continue;
       }
+    }
 
-      const diffs = diff(oldNode, newNode);
-      if (!diffs) continue;
-
-      for (const d of diffs) {
-        const property = diffPath(d);
-        if (property === "children") continue;
-
+    for (const [id, node] of unmatchedNew) {
+      if (!matchedNewIds.has(id)) {
         changes.push({
           pageName,
-          nodeId,
-          nodeName: newNode.name,
-          nodeType: newNode.type,
-          kind: "modified",
-          property,
-          oldValue: "lhs" in d ? d.lhs : undefined,
-          newValue: "rhs" in d ? d.rhs : undefined,
+          nodeId: id,
+          nodeName: node.name,
+          nodeType: node.type,
+          kind: "added",
         });
       }
     }
@@ -188,6 +255,7 @@ export function formatConsoleReport(
         const propLabel = change.property
           ? propertyLabel(change.property)
           : "";
+        const overrideTag = change.isOverride ? " [override]" : "";
         if (change.kind === "added") {
           lines.push(
             `  ➕ ${change.nodeName} (${change.nodeType}) added`,
@@ -196,9 +264,13 @@ export function formatConsoleReport(
           lines.push(
             `  ➖ ${change.nodeName} (${change.nodeType}) deleted`,
           );
+        } else if (change.kind === "renamed") {
+          lines.push(
+            `  🏷️  ${formatValue(change.oldValue)} → ${formatValue(change.newValue)} (renamed)`,
+          );
         } else {
           lines.push(
-            `  ✏️  ${change.nodeName}.${propLabel}: ${formatValue(change.oldValue)} → ${formatValue(change.newValue)}`,
+            `  ✏️  ${change.nodeName}.${propLabel}: ${formatValue(change.oldValue)} → ${formatValue(change.newValue)}${overrideTag}`,
           );
         }
       }
@@ -242,6 +314,7 @@ export function formatSlackReport(
         const propLabel = change.property
           ? propertyLabel(change.property)
           : "";
+        const overrideTag = change.isOverride ? " _[override]_" : "";
         if (change.kind === "added") {
           lines.push(
             `  ➕ \`${change.nodeName}\` (${change.nodeType}) added`,
@@ -250,9 +323,13 @@ export function formatSlackReport(
           lines.push(
             `  ➖ \`${change.nodeName}\` (${change.nodeType}) deleted`,
           );
+        } else if (change.kind === "renamed") {
+          lines.push(
+            `  🏷️ \`${formatValue(change.oldValue)}\` → \`${formatValue(change.newValue)}\` (renamed)`,
+          );
         } else {
           lines.push(
-            `  ✏️ \`${change.nodeName}\`.${propLabel}: \`${formatValue(change.oldValue)}\` → \`${formatValue(change.newValue)}\``,
+            `  ✏️ \`${change.nodeName}\`.${propLabel}: \`${formatValue(change.oldValue)}\` → \`${formatValue(change.newValue)}\`${overrideTag}`,
           );
         }
       }
@@ -305,7 +382,30 @@ function kindIcon(kind: ChangeEntry["kind"]): string {
       return "➖";
     case "modified":
       return "✏️";
+    case "renamed":
+      return "🏷️";
   }
+}
+
+/** Properties that are instance overrides rather than master component changes */
+const OVERRIDE_PROPERTIES = new Set([
+  "characters",
+  "fills",
+  "strokes",
+  "opacity",
+  "visible",
+  "fontSize",
+  "fontFamily",
+  "fontWeight",
+  "letterSpacing",
+  "lineHeightPx",
+  "textAlignHorizontal",
+  "textAlignVertical",
+  "effects",
+]);
+
+function isOverrideProperty(property: string): boolean {
+  return OVERRIDE_PROPERTIES.has(property);
 }
 
 function propertyLabel(property: string): string {
@@ -317,5 +417,46 @@ function formatValue(value: unknown): string {
   if (typeof value === "string") return value;
   if (typeof value === "number") return String(value);
   if (typeof value === "boolean") return String(value);
+
+  // Format Figma color objects as #RRGGBB
+  if (isColorObject(value)) return colorToHex(value);
+
+  // Format fills array with readable colors
+  if (Array.isArray(value) && value.length > 0 && value[0]?.type === "SOLID" && value[0]?.color) {
+    return value
+      .map((fill) => {
+        const hex = isColorObject(fill.color) ? colorToHex(fill.color) : "";
+        const opacity = fill.opacity !== undefined && fill.opacity !== 1
+          ? ` ${Math.round(fill.opacity * 100)}%`
+          : "";
+        return hex ? `${hex}${opacity}` : JSON.stringify(fill);
+      })
+      .join(", ");
+  }
+
   return JSON.stringify(value);
+}
+
+interface FigmaColor {
+  r: number;
+  g: number;
+  b: number;
+  a?: number;
+}
+
+function isColorObject(value: unknown): value is FigmaColor {
+  if (typeof value !== "object" || value === null) return false;
+  const v = value as Record<string, unknown>;
+  return typeof v.r === "number" && typeof v.g === "number" && typeof v.b === "number";
+}
+
+function colorToHex(color: FigmaColor): string {
+  const r = Math.round(color.r * 255);
+  const g = Math.round(color.g * 255);
+  const b = Math.round(color.b * 255);
+  const hex = `#${r.toString(16).padStart(2, "0")}${g.toString(16).padStart(2, "0")}${b.toString(16).padStart(2, "0")}`;
+  if (color.a !== undefined && color.a !== 1) {
+    return `${hex} ${Math.round(color.a * 100)}%`;
+  }
+  return hex;
 }

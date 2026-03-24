@@ -198,6 +198,140 @@ describe("detectChanges", () => {
     expect(changes.length).toBeGreaterThan(0);
     expect(changes[0].property).toBe("fills");
   });
+
+  it("detects node rename (same ID, different name)", () => {
+    const oldPages = {
+      Home: makePage("Home", [
+        makeNode({ id: "1", name: "OldName" }),
+      ]),
+    };
+    const newPages = {
+      Home: makePage("Home", [
+        makeNode({ id: "1", name: "NewName" }),
+      ]),
+    };
+    const changes = detectChanges(oldPages, newPages);
+    const rename = changes.find((c) => c.kind === "renamed");
+    expect(rename).toBeDefined();
+    expect(rename!.oldValue).toBe("OldName");
+    expect(rename!.newValue).toBe("NewName");
+  });
+
+  it("matches nodes with changed IDs by type+name instead of add+delete", () => {
+    const oldPages = {
+      Home: makePage("Home", [
+        makeNode({ id: "1", name: "Button", fontSize: 14 }),
+      ]),
+    };
+    const newPages = {
+      Home: makePage("Home", [
+        makeNode({ id: "99", name: "Button", fontSize: 16 }),
+      ]),
+    };
+    const changes = detectChanges(oldPages, newPages);
+    // Should detect as modified, not add+delete
+    const added = changes.filter((c) => c.kind === "added");
+    const deleted = changes.filter((c) => c.kind === "deleted");
+    const modified = changes.filter((c) => c.kind === "modified");
+    expect(added).toHaveLength(0);
+    expect(deleted).toHaveLength(0);
+    expect(modified).toHaveLength(1);
+    expect(modified[0].property).toBe("fontSize");
+  });
+
+  it("marks override changes on INSTANCE nodes", () => {
+    const oldPages = {
+      Home: makePage("Home", [
+        makeNode({
+          id: "1",
+          name: "MyButton",
+          type: "INSTANCE",
+          componentId: "comp:1",
+          characters: "Click",
+        }),
+      ]),
+    };
+    const newPages = {
+      Home: makePage("Home", [
+        makeNode({
+          id: "1",
+          name: "MyButton",
+          type: "INSTANCE",
+          componentId: "comp:1",
+          characters: "Submit",
+        }),
+      ]),
+    };
+    const changes = detectChanges(oldPages, newPages);
+    expect(changes).toHaveLength(1);
+    expect(changes[0].isOverride).toBe(true);
+  });
+
+  it("marks non-override changes on INSTANCE nodes", () => {
+    const oldPages = {
+      Home: makePage("Home", [
+        makeNode({
+          id: "1",
+          name: "MyButton",
+          type: "INSTANCE",
+          componentId: "comp:1",
+          layoutMode: "HORIZONTAL",
+        }),
+      ]),
+    };
+    const newPages = {
+      Home: makePage("Home", [
+        makeNode({
+          id: "1",
+          name: "MyButton",
+          type: "INSTANCE",
+          componentId: "comp:1",
+          layoutMode: "VERTICAL",
+        }),
+      ]),
+    };
+    const changes = detectChanges(oldPages, newPages);
+    expect(changes).toHaveLength(1);
+    expect(changes[0].isOverride).toBe(false);
+  });
+});
+
+describe("color formatting in reports", () => {
+  it("formats fill color changes as hex in console report", () => {
+    const changes = [
+      {
+        pageName: "Home",
+        nodeId: "1",
+        nodeName: "Box",
+        nodeType: "FRAME",
+        kind: "modified" as const,
+        property: "fills",
+        oldValue: [{ type: "SOLID", color: { r: 1, g: 0, b: 0 } }],
+        newValue: [{ type: "SOLID", color: { r: 0, g: 0, b: 1 } }],
+      },
+    ];
+    const report = formatConsoleReport("abc123", changes);
+    expect(report).toContain("#ff0000");
+    expect(report).toContain("#0000ff");
+  });
+
+  it("formats color with opacity", () => {
+    const changes = [
+      {
+        pageName: "Home",
+        nodeId: "1",
+        nodeName: "Box",
+        nodeType: "FRAME",
+        kind: "modified" as const,
+        property: "fills",
+        oldValue: [{ type: "SOLID", color: { r: 1, g: 1, b: 1 }, opacity: 0.5 }],
+        newValue: [{ type: "SOLID", color: { r: 0, g: 0, b: 0 }, opacity: 1 }],
+      },
+    ];
+    const report = formatConsoleReport("abc123", changes);
+    expect(report).toContain("#ffffff 50%");
+    expect(report).toContain("#000000");
+  });
 });
 
 describe("formatConsoleReport", () => {

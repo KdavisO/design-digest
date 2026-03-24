@@ -10,11 +10,21 @@ describe("sanitizeNode", () => {
       type: "FRAME",
       absoluteBoundingBox: { x: 0, y: 0, width: 100, height: 100 },
       absoluteRenderBounds: { x: 0, y: 0, width: 100, height: 100 },
+      pluginData: { foo: "bar" },
+      sharedPluginData: { baz: "qux" },
+      exportSettings: [{}],
+      reactions: [],
+      scrollBehavior: "SCROLLS",
       fills: [{ type: "SOLID" }],
     };
     const result = sanitizeNode(node);
     expect(result).not.toHaveProperty("absoluteBoundingBox");
     expect(result).not.toHaveProperty("absoluteRenderBounds");
+    expect(result).not.toHaveProperty("pluginData");
+    expect(result).not.toHaveProperty("sharedPluginData");
+    expect(result).not.toHaveProperty("exportSettings");
+    expect(result).not.toHaveProperty("reactions");
+    expect(result).not.toHaveProperty("scrollBehavior");
     expect(result).toHaveProperty("fills");
     expect(result).toHaveProperty("name");
   });

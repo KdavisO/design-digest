@@ -23,6 +23,12 @@ const NOISE_KEYS = new Set([
   "transitionNodeID",
   "prototypeDevice",
   "flowStartingPoints",
+  "pluginData",
+  "sharedPluginData",
+  "exportSettings",
+  "reactions",
+  "prototypeStartNodeID",
+  "scrollBehavior",
 ]);
 
 export async function fetchFile(config: Config): Promise<FigmaFile> {
