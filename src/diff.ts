@@ -134,10 +134,13 @@ async function main(): Promise<void> {
     }
 
     // Plain text fallback for notifications/emails
-    const fallbackText = allChanges
+    let fallbackText = allChanges
       .filter((r) => r.changes.length > 0)
       .map((r) => formatSlackReport(r.fileKey, r.changes))
       .join("\n---\n");
+    if (aiSummary) {
+      fallbackText += `\n---\n*AI Summary:*\n${aiSummary}`;
+    }
 
     await sendSlackNotification(config.slackWebhookUrl, {
       text: fallbackText,
