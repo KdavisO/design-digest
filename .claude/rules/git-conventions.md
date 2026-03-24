@@ -8,7 +8,7 @@ globs: []
 ## ブランチ命名
 
 - フォーマット: `{type}/{issue番号}-{英語の短い説明}`
-- type: `feat/`, `fix/`, `refactor/`, `ui/`, `docs/`, `chore/`
+- type: `feat`, `fix`, `refactor`, `ui`, `docs`, `chore`
 - 例: `feat/12-add-slack-formatter`, `fix/8-snapshot-parsing`
 
 ## コミットメッセージ

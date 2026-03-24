@@ -55,7 +55,7 @@ PRのレビューコメントを取得し、対応してください。
   - 内容: 連続空振り回数（整数値のみ）
 - **cronタスクIDファイル**: `/tmp/design-digest-review-{ownerRepo}-cron-{PR番号}`
   - 内容: `/loop` 作成時のcronタスクID（CronCreate の戻り値）
-  - このファイルは `/loop` 起動元（`issue-pr --auto` や手動の `/loop`）が作成する。`review-respond` は読み取りのみ
+  - このファイルは `/loop` 起動元（例: `issue-start --parallel --auto` や手動の `/loop` 実行時）が作成する。`review-respond` は読み取りのみ
 - **スコープ外Issue候補ファイル**: `/tmp/design-digest-review-{ownerRepo}-deferred-{PR番号}`
   - 内容: スコープ外と判断したレビューコメントのうち、将来のIssue候補となるものをJSON Lines形式で蓄積
   - 各行のフォーマット（1行1オブジェクト）: `{"comment_id": "<comment id>" | null, "review_id": "<review id>" | null, "kind": "line_comment" | "review_body", "path": "<ファイルパス>" | null, "line": <行番号> | null | "N/A", "summary": "<改善内容の要約>"}`
