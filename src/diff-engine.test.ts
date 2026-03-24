@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { detectChanges, formatConsoleReport, formatSlackReport, formatSlackBlocks, nodeUrl } from "./diff-engine.js";
+import { detectChanges, formatConsoleReport, formatSlackReport, formatSlackBlocks, nodeUrl, convertMarkdownToSlackMrkdwn } from "./diff-engine.js";
 import type { FigmaNode } from "./figma-client.js";
 
 function makeNode(overrides: Partial<FigmaNode> & { id: string; name: string }): FigmaNode {
@@ -627,5 +627,108 @@ describe("node links in reports", () => {
     // Display text should have escaped special chars
     expect(report).toContain("Icon &lt;beta&gt; │ v2 &amp; more");
     expect(report).toContain("│"); // pipe replaced with box drawing char
+  });
+});
+
+describe("convertMarkdownToSlackMrkdwn", () => {
+  it("converts ATX headings to bold", () => {
+    expect(convertMarkdownToSlackMrkdwn("## Summary")).toBe("*Summary*");
+    expect(convertMarkdownToSlackMrkdwn("### Details")).toBe("*Details*");
+    expect(convertMarkdownToSlackMrkdwn("# Top Level")).toBe("*Top Level*");
+  });
+
+  it("converts bold syntax", () => {
+    expect(convertMarkdownToSlackMrkdwn("**bold text**")).toBe("*bold text*");
+    expect(convertMarkdownToSlackMrkdwn("__bold text__")).toBe("*bold text*");
+  });
+
+  it("converts strikethrough", () => {
+    expect(convertMarkdownToSlackMrkdwn("~~deleted~~")).toBe("~deleted~");
+  });
+
+  it("converts markdown links to Slack links", () => {
+    expect(convertMarkdownToSlackMrkdwn("[Click here](https://example.com)")).toBe(
+      "<https://example.com|Click here>",
+    );
+  });
+
+  it("preserves inline code", () => {
+    expect(convertMarkdownToSlackMrkdwn("`code`")).toBe("`code`");
+  });
+
+  it("does not transform markdown inside inline code spans", () => {
+    expect(convertMarkdownToSlackMrkdwn("`**bold**`")).toBe("`**bold**`");
+    expect(convertMarkdownToSlackMrkdwn("text `## heading` text")).toBe("text `## heading` text");
+  });
+
+  it("escapes special chars in link text for Slack", () => {
+    expect(convertMarkdownToSlackMrkdwn("[A & B](https://example.com)")).toBe(
+      "<https://example.com|A &amp; B>",
+    );
+    expect(convertMarkdownToSlackMrkdwn("[<tag>](https://example.com)")).toBe(
+      "<https://example.com|&lt;tag&gt;>",
+    );
+  });
+
+  it("skips image syntax ![alt](url)", () => {
+    expect(convertMarkdownToSlackMrkdwn("![logo](https://example.com/img.png)")).toBe(
+      "![logo](https://example.com/img.png)",
+    );
+  });
+
+  it("escapes reserved chars in URLs for Slack", () => {
+    expect(convertMarkdownToSlackMrkdwn("[link](https://example.com?a=1|b=2)")).toBe(
+      "<https://example.com?a=1%7Cb=2|link>",
+    );
+    expect(convertMarkdownToSlackMrkdwn("[link](https://example.com/a>b)")).toBe(
+      "<https://example.com/a%3Eb|link>",
+    );
+    expect(convertMarkdownToSlackMrkdwn("[link](https://example.com/<path>)")).toBe(
+      "<https://example.com/%3Cpath%3E|link>",
+    );
+  });
+
+  it("handles URLs with balanced parentheses", () => {
+    expect(
+      convertMarkdownToSlackMrkdwn("[Wiki](https://en.wikipedia.org/wiki/Foo_(bar))"),
+    ).toBe("<https://en.wikipedia.org/wiki/Foo_(bar)|Wiki>");
+  });
+
+  it("preserves bullet lists", () => {
+    expect(convertMarkdownToSlackMrkdwn("- item one\n- item two")).toBe(
+      "- item one\n- item two",
+    );
+  });
+
+  it("handles a realistic Claude API response", () => {
+    const input = [
+      "## Summary",
+      "The **button component** color was changed from `#000` to `#333`.",
+      "",
+      "## Implementation Impact",
+      "- Update CSS variables for button colors",
+      "- Check [design system docs](https://example.com/docs) for details",
+      "",
+      "## Priority",
+      "**High** — affects multiple components",
+    ].join("\n");
+
+    const result = convertMarkdownToSlackMrkdwn(input);
+
+    expect(result).toContain("*Summary*");
+    expect(result).toContain("*button component*");
+    expect(result).toContain("`#000`");
+    expect(result).toContain("*Implementation Impact*");
+    expect(result).toContain("- Update CSS variables");
+    expect(result).toContain("<https://example.com/docs|design system docs>");
+    expect(result).toContain("*High*");
+    // Should NOT contain markdown artifacts
+    expect(result).not.toContain("##");
+    expect(result).not.toContain("**");
+  });
+
+  it("passes through plain text unchanged", () => {
+    const plain = "No formatting here, just text.";
+    expect(convertMarkdownToSlackMrkdwn(plain)).toBe(plain);
   });
 });

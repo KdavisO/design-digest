@@ -13,6 +13,7 @@ import {
   formatSlackBlocks,
   formatSlackReport,
   chunkLines,
+  convertMarkdownToSlackMrkdwn,
 } from "./diff-engine.js";
 import { generateSummary } from "./claude-summary.js";
 import { sendSlackNotification } from "./notify.js";
@@ -96,10 +97,12 @@ async function main(): Promise<void> {
 
   // Optional: AI summary
   let aiSummary: string | undefined;
+  let slackSummary: string | undefined;
   if (config.claudeSummaryEnabled && config.anthropicApiKey) {
     console.log("\nGenerating AI summary...");
     try {
       aiSummary = await generateSummary(config.anthropicApiKey, totalChanges);
+      slackSummary = convertMarkdownToSlackMrkdwn(aiSummary);
       console.log("\n--- AI Summary ---");
       console.log(aiSummary);
     } catch (err) {
@@ -117,13 +120,13 @@ async function main(): Promise<void> {
       .filter((r) => r.changes.length > 0)
       .flatMap((r) => formatSlackBlocks(r.fileKey, r.changes));
 
-    if (aiSummary) {
+    if (slackSummary) {
       blocks.push({ type: "divider" });
       blocks.push({
         type: "section",
         text: { type: "mrkdwn", text: "*AI Summary:*" },
       });
-      const summaryChunks = chunkLines(aiSummary.split("\n"), 3000);
+      const summaryChunks = chunkLines(slackSummary.split("\n"), 3000);
       for (const chunk of summaryChunks) {
         blocks.push({
           type: "section",
@@ -146,8 +149,8 @@ async function main(): Promise<void> {
       .filter((r) => r.changes.length > 0)
       .map((r) => formatSlackReport(r.fileKey, r.changes))
       .join("\n---\n");
-    if (aiSummary) {
-      fallbackText += `\n---\n*AI Summary:*\n${aiSummary}`;
+    if (slackSummary) {
+      fallbackText += `\n---\n*AI Summary:*\n${slackSummary}`;
     }
 
     await sendSlackNotification(config.slackWebhookUrl, {
