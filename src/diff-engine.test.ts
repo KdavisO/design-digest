@@ -683,6 +683,9 @@ describe("convertMarkdownToSlackMrkdwn", () => {
     expect(convertMarkdownToSlackMrkdwn("[link](https://example.com/a>b)")).toBe(
       "<https://example.com/a%3Eb|link>",
     );
+    expect(convertMarkdownToSlackMrkdwn("[link](https://example.com/<path>)")).toBe(
+      "<https://example.com/%3Cpath%3E|link>",
+    );
   });
 
   it("handles URLs with balanced parentheses", () => {

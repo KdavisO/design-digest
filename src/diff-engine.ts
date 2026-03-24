@@ -623,6 +623,7 @@ export function nodeUrl(fileKey: string, nodeId: string): string {
 /** Escape URL for use inside Slack link syntax `<url|text>` — encode chars that break parsing */
 function escapeSlackUrl(url: string): string {
   return url
+    .replace(/</g, "%3C")
     .replace(/>/g, "%3E")
     .replace(/\|/g, "%7C");
 }
@@ -708,7 +709,7 @@ function convertMarkdownLinksToSlack(text: string): string {
     const linkText = text.slice(openBracket + 1, closeBracketParen);
     const urlStart = closeBracketParen + 2;
 
-    // Find matching close paren, allowing one level of balanced parentheses
+    // Find matching close paren, allowing arbitrarily nested balanced parentheses in the URL
     let pos = urlStart;
     let parenDepth = 0;
     while (pos < text.length) {
