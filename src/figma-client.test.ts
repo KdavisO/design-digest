@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { sanitizeNode, filterWatchTargets } from "./figma-client.js";
-import type { FigmaNode, FigmaFile } from "./figma-client.js";
+import { sanitizeNode, filterWatchTargets, extractEditorsSince } from "./figma-client.js";
+import type { FigmaNode, FigmaFile, FigmaVersion } from "./figma-client.js";
 
 describe("sanitizeNode", () => {
   it("removes noise keys", () => {
@@ -98,5 +98,54 @@ describe("filterWatchTargets", () => {
   it("handles non-matching page names", () => {
     const result = filterWatchTargets(file, ["NonExistent"]);
     expect(result).toHaveLength(0);
+  });
+});
+
+describe("extractEditorsSince", () => {
+  const makeVersion = (
+    id: string,
+    createdAt: string,
+    userId: string,
+    handle: string,
+  ): FigmaVersion => ({
+    id,
+    created_at: createdAt,
+    label: "",
+    description: "",
+    user: { id: userId, handle, img_url: `https://img.example.com/${userId}` },
+  });
+
+  it("returns editors after the given timestamp", () => {
+    const versions: FigmaVersion[] = [
+      makeVersion("v3", "2024-01-03T00:00:00Z", "u1", "Alice"),
+      makeVersion("v2", "2024-01-02T00:00:00Z", "u2", "Bob"),
+      makeVersion("v1", "2024-01-01T00:00:00Z", "u3", "Charlie"),
+    ];
+    const editors = extractEditorsSince(versions, "2024-01-01T12:00:00Z");
+    expect(editors).toHaveLength(2);
+    expect(editors.map((e) => e.handle)).toEqual(["Alice", "Bob"]);
+  });
+
+  it("deduplicates users", () => {
+    const versions: FigmaVersion[] = [
+      makeVersion("v3", "2024-01-03T00:00:00Z", "u1", "Alice"),
+      makeVersion("v2", "2024-01-02T00:00:00Z", "u1", "Alice"),
+    ];
+    const editors = extractEditorsSince(versions, "2024-01-01T00:00:00Z");
+    expect(editors).toHaveLength(1);
+    expect(editors[0].handle).toBe("Alice");
+  });
+
+  it("returns empty array when no versions are after the timestamp", () => {
+    const versions: FigmaVersion[] = [
+      makeVersion("v1", "2024-01-01T00:00:00Z", "u1", "Alice"),
+    ];
+    const editors = extractEditorsSince(versions, "2024-01-02T00:00:00Z");
+    expect(editors).toHaveLength(0);
+  });
+
+  it("returns empty array for empty versions list", () => {
+    const editors = extractEditorsSince([], "2024-01-01T00:00:00Z");
+    expect(editors).toHaveLength(0);
   });
 });

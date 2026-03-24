@@ -3,9 +3,12 @@ import { loadConfig } from "./config.js";
 import {
   fetchFile,
   fetchNodes,
+  fetchVersions,
+  extractEditorsSince,
   filterWatchTargets,
   sanitizeNode,
 } from "./figma-client.js";
+import type { FigmaUser } from "./figma-client.js";
 import { loadSnapshot, saveSnapshot } from "./snapshot.js";
 import {
   detectChanges,
@@ -24,7 +27,7 @@ import type { Config } from "./config.js";
 async function processFile(
   config: Config,
   fileKey: string,
-): Promise<{ fileKey: string; changes: ChangeEntry[] }> {
+): Promise<{ fileKey: string; changes: ChangeEntry[]; editors: FigmaUser[] }> {
   // Fetch current state from Figma
   let pages: Record<string, FigmaNode>;
 
@@ -62,23 +65,38 @@ async function processFile(
 
   if (!previous) {
     console.log("  No previous snapshot found. First run — baseline saved.");
-    return { fileKey, changes: [] };
+    return { fileKey, changes: [], editors: [] };
   }
 
   // Detect changes
   const changes = detectChanges(previous.pages, pages);
-  const report = buildReport(fileKey, changes);
+
+  // Fetch editors since last snapshot only if there are changes
+  let editors: FigmaUser[] = [];
+  if (changes.length > 0) {
+    try {
+      console.log("  Fetching version history...");
+      const versions = await fetchVersions(config.figmaToken, fileKey);
+      editors = extractEditorsSince(versions, previous.timestamp);
+      if (editors.length > 0) {
+        console.log(`  Editors: ${editors.map((e) => e.handle).join(", ")}`);
+      }
+    } catch (err) {
+      console.warn("  Failed to fetch version history:", err);
+    }
+  }
+  const report = buildReport(fileKey, changes, editors);
 
   console.log(report.summary);
 
-  return { fileKey, changes };
+  return { fileKey, changes, editors };
 }
 
 async function main(): Promise<void> {
   console.log("DesignDigest: Starting diff check...");
 
   const config = loadConfig();
-  const allChanges: { fileKey: string; changes: ChangeEntry[] }[] = [];
+  const allChanges: { fileKey: string; changes: ChangeEntry[]; editors: FigmaUser[] }[] = [];
 
   for (const fileKey of config.figmaFileKeys) {
     console.log(
@@ -118,7 +136,7 @@ async function main(): Promise<void> {
     const MAX_BLOCKS = 50;
     let blocks = allChanges
       .filter((r) => r.changes.length > 0)
-      .flatMap((r) => formatSlackBlocks(r.fileKey, r.changes));
+      .flatMap((r) => formatSlackBlocks(r.fileKey, r.changes, r.editors));
 
     if (slackSummary) {
       blocks.push({ type: "divider" });
@@ -147,7 +165,7 @@ async function main(): Promise<void> {
     // Plain text fallback for notifications/emails
     let fallbackText = allChanges
       .filter((r) => r.changes.length > 0)
-      .map((r) => formatSlackReport(r.fileKey, r.changes))
+      .map((r) => formatSlackReport(r.fileKey, r.changes, r.editors))
       .join("\n---\n");
     if (slackSummary) {
       fallbackText += `\n---\n*AI Summary:*\n${slackSummary}`;

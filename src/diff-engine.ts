@@ -1,7 +1,7 @@
 import deepDiff from "deep-diff";
 const { diff } = deepDiff;
 type Diff<L, R> = deepDiff.Diff<L, R>;
-import type { FigmaNode } from "./figma-client.js";
+import type { FigmaNode, FigmaUser } from "./figma-client.js";
 
 export interface ChangeEntry {
   pageName: string;
@@ -215,25 +215,32 @@ export function detectChanges(
 export function buildReport(
   fileKey: string,
   changes: ChangeEntry[],
+  editors?: FigmaUser[],
 ): ChangeReport {
   return {
     fileKey,
     changes,
-    summary: formatConsoleReport(fileKey, changes),
+    summary: formatConsoleReport(fileKey, changes, editors),
   };
 }
 
 export function formatConsoleReport(
   fileKey: string,
   changes: ChangeEntry[],
+  editors?: FigmaUser[],
 ): string {
   if (changes.length === 0) return `No changes detected in ${fileKey}`;
 
   const lines: string[] = [
     `=== DesignDigest Report: ${fileKey} ===`,
     `${changes.length} change(s) detected`,
-    "",
   ];
+
+  if (editors && editors.length > 0) {
+    lines.push(`Edited by: ${editors.map((e) => e.handle).join(", ")}`);
+  }
+
+  lines.push("");
 
   const grouped = groupByPage(changes);
 
@@ -286,6 +293,7 @@ export function formatConsoleReport(
 export function formatSlackReport(
   fileKey: string,
   changes: ChangeEntry[],
+  editors?: FigmaUser[],
 ): string {
   if (changes.length === 0) return "";
 
@@ -293,8 +301,13 @@ export function formatSlackReport(
     `*DesignDigest Report*`,
     `File: \`${fileKey}\` | ${changes.length} change(s) detected`,
     `<https://www.figma.com/design/${fileKey}|Open in Figma>`,
-    "",
   ];
+
+  if (editors && editors.length > 0) {
+    lines.push(`Edited by: ${editors.map((e) => e.handle).join(", ")}`);
+  }
+
+  lines.push("");
 
   const grouped = groupByPage(changes);
 
@@ -354,6 +367,7 @@ export interface SlackBlock {
 export function formatSlackBlocks(
   fileKey: string,
   changes: ChangeEntry[],
+  editors?: FigmaUser[],
 ): SlackBlock[] {
   if (changes.length === 0) return [];
 
@@ -384,6 +398,19 @@ export function formatSlackBlocks(
       action_id: `open_figma_${fileKey}`,
     },
   });
+
+  // Editors section
+  if (editors && editors.length > 0) {
+    blocks.push({
+      type: "context",
+      elements: [
+        {
+          type: "mrkdwn",
+          text: `✏️ Edited by: ${editors.map((e) => e.handle).join(", ")}`,
+        },
+      ],
+    });
+  }
 
   blocks.push({ type: "divider" });
 

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { detectChanges, formatConsoleReport, formatSlackReport, formatSlackBlocks, nodeUrl, convertMarkdownToSlackMrkdwn } from "./diff-engine.js";
-import type { FigmaNode } from "./figma-client.js";
+import type { FigmaNode, FigmaUser } from "./figma-client.js";
 
 function makeNode(overrides: Partial<FigmaNode> & { id: string; name: string }): FigmaNode {
   return {
@@ -730,5 +730,60 @@ describe("convertMarkdownToSlackMrkdwn", () => {
   it("passes through plain text unchanged", () => {
     const plain = "No formatting here, just text.";
     expect(convertMarkdownToSlackMrkdwn(plain)).toBe(plain);
+  });
+});
+
+describe("editors in reports", () => {
+  const editors: FigmaUser[] = [
+    { id: "u1", handle: "Alice", img_url: "https://img.example.com/u1" },
+    { id: "u2", handle: "Bob", img_url: "https://img.example.com/u2" },
+  ];
+
+  const changes = [
+    {
+      pageName: "Home",
+      nodeId: "1",
+      nodeName: "Button",
+      nodeType: "FRAME",
+      kind: "added" as const,
+    },
+  ];
+
+  it("console report includes editors", () => {
+    const report = formatConsoleReport("abc123", changes, editors);
+    expect(report).toContain("Edited by: Alice, Bob");
+  });
+
+  it("console report omits editors when empty", () => {
+    const report = formatConsoleReport("abc123", changes, []);
+    expect(report).not.toContain("Edited by");
+  });
+
+  it("console report omits editors when undefined", () => {
+    const report = formatConsoleReport("abc123", changes);
+    expect(report).not.toContain("Edited by");
+  });
+
+  it("Slack report includes editors", () => {
+    const report = formatSlackReport("abc123", changes, editors);
+    expect(report).toContain("Edited by: Alice, Bob");
+  });
+
+  it("Block Kit includes editors context block", () => {
+    const blocks = formatSlackBlocks("abc123", changes, editors);
+    const contextBlocks = blocks.filter((b) => b.type === "context");
+    const editorsBlock = contextBlocks.find((b) =>
+      b.elements?.some((e) => e.text.includes("Edited by")),
+    );
+    expect(editorsBlock).toBeDefined();
+    expect(editorsBlock!.elements![0].text).toContain("Alice, Bob");
+  });
+
+  it("Block Kit omits editors context when empty", () => {
+    const blocks = formatSlackBlocks("abc123", changes, []);
+    const editorsBlock = blocks.filter((b) => b.type === "context").find((b) =>
+      b.elements?.some((e) => e.text.includes("Edited by")),
+    );
+    expect(editorsBlock).toBeUndefined();
   });
 });
