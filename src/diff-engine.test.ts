@@ -656,6 +656,32 @@ describe("convertMarkdownToSlackMrkdwn", () => {
     expect(convertMarkdownToSlackMrkdwn("`code`")).toBe("`code`");
   });
 
+  it("does not transform markdown inside inline code spans", () => {
+    expect(convertMarkdownToSlackMrkdwn("`**bold**`")).toBe("`**bold**`");
+    expect(convertMarkdownToSlackMrkdwn("text `## heading` text")).toBe("text `## heading` text");
+  });
+
+  it("escapes special chars in link text for Slack", () => {
+    expect(convertMarkdownToSlackMrkdwn("[A & B](https://example.com)")).toBe(
+      "<https://example.com|A &amp; B>",
+    );
+    expect(convertMarkdownToSlackMrkdwn("[<tag>](https://example.com)")).toBe(
+      "<https://example.com|&lt;tag&gt;>",
+    );
+  });
+
+  it("skips image syntax ![alt](url)", () => {
+    expect(convertMarkdownToSlackMrkdwn("![logo](https://example.com/img.png)")).toBe(
+      "![logo](https://example.com/img.png)",
+    );
+  });
+
+  it("handles URLs with balanced parentheses", () => {
+    expect(
+      convertMarkdownToSlackMrkdwn("[Wiki](https://en.wikipedia.org/wiki/Foo_(bar))"),
+    ).toBe("<https://en.wikipedia.org/wiki/Foo_(bar)|Wiki>");
+  });
+
   it("preserves bullet lists", () => {
     expect(convertMarkdownToSlackMrkdwn("- item one\n- item two")).toBe(
       "- item one\n- item two",

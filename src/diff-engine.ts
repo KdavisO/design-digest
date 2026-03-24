@@ -640,21 +640,90 @@ function slackNodeLink(fileKey: string, nodeId: string, nodeName: string): strin
  * - ATX headings (`## Title`) → bold (`*Title*`)
  * - Bold (`**text**` / `__text__`) → `*text*`
  * - Italic (`_text_`) stays the same (compatible)
- * - Links (`[text](url)`) → Slack links (`<url|text>`)
+ * - Links (`[text](url)`) → Slack links (`<url|text>`) with proper escaping
  * - Strikethrough (`~~text~~`) → `~text~`
+ *
+ * Inline code spans (`` `...` ``) are preserved unchanged.
+ * Image syntax (`![alt](url)`) is left as-is.
  */
 export function convertMarkdownToSlackMrkdwn(markdown: string): string {
-  return (
-    markdown
-      // ATX headings → bold
-      .replace(/^#{1,6}\s+(.+)$/gm, "*$1*")
-      // Bold: **text** or __text__ → *text*
-      // Use a two-pass approach to handle nested bold+italic
-      .replace(/\*\*(.+?)\*\*/g, "*$1*")
-      .replace(/__(.+?)__/g, "*$1*")
-      // Strikethrough: ~~text~~ → ~text~
-      .replace(/~~(.+?)~~/g, "~$1~")
-      // Links: [text](url) → <url|text>
-      .replace(/\[([^\]]+)\]\(([^)]+)\)/g, "<$2|$1>")
-  );
+  // Tokenize inline code spans to protect them from transformation
+  const codeSpans: string[] = [];
+  let tokenized = markdown.replace(/`[^`]+`/g, (match) => {
+    codeSpans.push(match);
+    return `\x00CODE${codeSpans.length - 1}\x00`;
+  });
+
+  // Apply Markdown → mrkdwn transformations
+  tokenized = tokenized
+    // ATX headings → bold
+    .replace(/^#{1,6}\s+(.+)$/gm, "*$1*")
+    // Bold: **text** or __text__ → *text*
+    .replace(/\*\*(.+?)\*\*/g, "*$1*")
+    .replace(/__(.+?)__/g, "*$1*")
+    // Strikethrough: ~~text~~ → ~text~
+    .replace(/~~(.+?)~~/g, "~$1~");
+
+  // Convert Markdown links to Slack links (skip image syntax, handle balanced parens)
+  tokenized = convertMarkdownLinksToSlack(tokenized);
+
+  // Restore inline code spans
+  return tokenized.replace(/\x00CODE(\d+)\x00/g, (_match, index) => {
+    return codeSpans[Number(index)];
+  });
+}
+
+/** Convert `[text](url)` to `<url|text>` with proper escaping, skipping `![alt](url)` */
+function convertMarkdownLinksToSlack(text: string): string {
+  let result = "";
+  let i = 0;
+
+  while (i < text.length) {
+    const openBracket = text.indexOf("[", i);
+    if (openBracket === -1) {
+      result += text.slice(i);
+      break;
+    }
+
+    // Skip image syntax: ![alt](url)
+    if (openBracket > 0 && text[openBracket - 1] === "!") {
+      result += text.slice(i, openBracket + 1);
+      i = openBracket + 1;
+      continue;
+    }
+
+    const closeBracketParen = text.indexOf("](", openBracket);
+    if (closeBracketParen === -1) {
+      result += text.slice(i);
+      break;
+    }
+
+    const linkText = text.slice(openBracket + 1, closeBracketParen);
+    const urlStart = closeBracketParen + 2;
+
+    // Find matching close paren, allowing one level of balanced parentheses
+    let pos = urlStart;
+    let parenDepth = 0;
+    while (pos < text.length) {
+      if (text[pos] === "(") {
+        parenDepth++;
+      } else if (text[pos] === ")") {
+        if (parenDepth === 0) break;
+        parenDepth--;
+      }
+      pos++;
+    }
+
+    if (pos >= text.length || text[pos] !== ")") {
+      result += text.slice(i);
+      break;
+    }
+
+    const url = text.slice(urlStart, pos);
+    result += text.slice(i, openBracket);
+    result += `<${url}|${escapeSlackLinkText(linkText)}>`;
+    i = pos + 1;
+  }
+
+  return result;
 }
