@@ -128,7 +128,7 @@ gh pr checks {PR番号} --json name,state
 Copilotがレビューを投稿済みかどうかを `/pulls/{PR}/reviews` で確認する（存在有無のみ。見落としを減らすため `per_page=100` で最大100件まで取得）:
 
 ```bash
-gh api repos/{owner}/{repo}/pulls/{PR番号}/reviews?per_page=100 | jq '[.[] | select(.user.login? == "Copilot" or .user.login? == "copilot-pull-request-reviewer[bot]")] | length'
+gh api repos/{owner}/{repo}/pulls/{PR番号}/reviews -f per_page=100 | jq '[.[] | select(.user.login? == "Copilot" or .user.login? == "copilot-pull-request-reviewer[bot]")] | length'
 ```
 
 判定条件:
