@@ -612,4 +612,20 @@ describe("node links in reports", () => {
       .join("\n");
     expect(content).toContain("<https://www.figma.com/design/abc123?node-id=1-2|Button>");
   });
+
+  it("escapes special characters in node names for Slack links", () => {
+    const specialChanges = [
+      {
+        pageName: "Home",
+        nodeId: "1:2",
+        nodeName: "Icon <beta> | v2 & more",
+        nodeType: "FRAME",
+        kind: "added" as const,
+      },
+    ];
+    const report = formatSlackReport("abc123", specialChanges);
+    // Display text should have escaped special chars
+    expect(report).toContain("Icon &lt;beta&gt; │ v2 &amp; more");
+    expect(report).toContain("│"); // pipe replaced with box drawing char
+  });
 });

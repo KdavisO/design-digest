@@ -306,7 +306,7 @@ export function formatSlackReport(
       const first = nodeChanges[0];
 
       if (nodeChanges.length > 5) {
-        const link = `<${nodeUrl(fileKey, first.nodeId)}|${first.nodeName}>`;
+        const link = slackNodeLink(fileKey, first.nodeId, first.nodeName);
         lines.push(
           `  📦 ${link} (${first.nodeType}): ${nodeChanges.length} changes`,
         );
@@ -318,7 +318,7 @@ export function formatSlackReport(
           ? propertyLabel(change.property)
           : "";
         const overrideTag = change.isOverride ? " _[override]_" : "";
-        const link = `<${nodeUrl(fileKey, change.nodeId)}|${change.nodeName}>`;
+        const link = slackNodeLink(fileKey, change.nodeId, change.nodeName);
         if (change.kind === "added") {
           lines.push(
             `  ➕ ${link} (${change.nodeType}) added`,
@@ -408,7 +408,7 @@ export function formatSlackBlocks(
       const first = nodeChanges[0];
 
       if (nodeChanges.length > 5) {
-        const link = `<${nodeUrl(fileKey, first.nodeId)}|${first.nodeName}>`;
+        const link = slackNodeLink(fileKey, first.nodeId, first.nodeName);
         lines.push(
           `📦 ${link} (${first.nodeType}): ${nodeChanges.length} changes`,
         );
@@ -487,7 +487,7 @@ export function chunkLines(lines: string[], maxChars: number): string[] {
 function formatBlockKitChange(fileKey: string, change: ChangeEntry): string {
   const propLabel = change.property ? propertyLabel(change.property) : "";
   const overrideTag = change.isOverride ? " _[override]_" : "";
-  const link = `<${nodeUrl(fileKey, change.nodeId)}|${change.nodeName}>`;
+  const link = slackNodeLink(fileKey, change.nodeId, change.nodeName);
 
   switch (change.kind) {
     case "added":
@@ -616,6 +616,19 @@ function colorToHex(color: FigmaColor): string {
 
 export function nodeUrl(fileKey: string, nodeId: string): string {
   // Figma URLs use hyphen-separated node IDs (e.g., "1:2" → "1-2")
-  const encodedId = nodeId.replace(/:/g, "-");
+  const encodedId = encodeURIComponent(nodeId.replace(/:/g, "-"));
   return `https://www.figma.com/design/${fileKey}?node-id=${encodedId}`;
+}
+
+/** Escape text for use inside Slack mrkdwn link syntax `<url|text>` */
+function escapeSlackLinkText(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\|/g, "│");
+}
+
+function slackNodeLink(fileKey: string, nodeId: string, nodeName: string): string {
+  return `<${nodeUrl(fileKey, nodeId)}|${escapeSlackLinkText(nodeName)}>`;
 }
