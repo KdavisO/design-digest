@@ -120,24 +120,26 @@ Set `ANTHROPIC_API_KEY` and `CLAUDE_SUMMARY_ENABLED=true`. The AI will summarize
 
 #### Claude API cost estimate
 
-DesignDigest uses **Claude Sonnet** (`claude-sonnet-4-20250514`) to generate change summaries. Each workflow execution makes a single Claude API call that summarizes changes across all monitored Figma files, with very low token usage.
+DesignDigest uses **Claude Sonnet 4** (`claude-sonnet-4-20250514`) to generate change summaries. Each workflow execution makes a single Claude API call that summarizes changes across all monitored Figma files, with very low token usage.
 
-| | Input tokens | Output tokens |
+| Scenario | Input tokens | Output tokens |
 |---|---|---|
-| Per execution (~10 total changes across watched files) | ~300–500 | ~200–400 |
-| Per execution (~50 total changes across watched files) | ~1,000–1,500 | ~400–800 |
+| ~10 total changes across watched files | ~300–500 | ~200–400 |
+| ~50 total changes across watched files | ~1,000–1,500 | ~400–800 |
 
-**Monthly cost estimates** (weekday runs = ~22 days/month):
+**Monthly cost estimates** (weekday runs = ~22 days/month, single summary call per run; driven by total change volume, not file count):
 
-| Scenario | Monthly cost (USD) |
+| Scenario (approx. total changes per run) | Monthly cost (USD) |
 |---|---|
-| 1–2 files, typical changes | ~$0.01–0.03 |
-| 3–5 files, typical changes | ~$0.03–0.10 |
-| 5+ files, heavy changes | ~$0.10–0.25 |
+| Light usage (~10–20 changes/run) | ~$0.01–0.03 |
+| Moderate usage (~20–50 changes/run) | ~$0.03–0.10 |
+| Heavy usage (~50–100+ changes/run) | ~$0.10–0.25 |
 
-Costs are **practically negligible** for most teams. Even with multiple files and frequent changes, monthly costs are unlikely to exceed $1.
+These ranges are back-of-the-envelope estimates based on Claude Sonnet 4 pricing as of 2025-05, assuming one weekday run per day (~22/month) and ~300–1,500 input tokens plus ~200–800 output tokens per run.
 
-For the latest pricing, see the [Anthropic pricing page](https://www.anthropic.com/pricing).
+Costs are **practically negligible** for most teams. Even with heavy usage, monthly costs are unlikely to exceed $1.
+
+For the latest per-token pricing, see the [Anthropic pricing page](https://www.anthropic.com/pricing).
 
 ### Slack setup
 
