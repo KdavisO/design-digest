@@ -13,6 +13,24 @@ export interface FigmaFile {
   document: FigmaNode;
 }
 
+export interface FigmaUser {
+  handle: string;
+  img_url: string;
+  id: string;
+}
+
+export interface FigmaVersion {
+  id: string;
+  created_at: string;
+  label: string;
+  description: string;
+  user: FigmaUser;
+}
+
+export interface FigmaVersionsResponse {
+  versions: FigmaVersion[];
+}
+
 const FIGMA_API_BASE = "https://api.figma.com/v1";
 
 const NOISE_KEYS = new Set([
@@ -53,6 +71,41 @@ export async function fetchNodes(
     result[id] = node.document;
   }
   return result;
+}
+
+export async function fetchVersions(
+  token: string,
+  fileKey: string,
+): Promise<FigmaVersion[]> {
+  const url = `${FIGMA_API_BASE}/files/${fileKey}/versions`;
+  const resp = await figmaRequest<FigmaVersionsResponse>(url, token);
+  return resp.versions;
+}
+
+/**
+ * Extract unique editors from version history since a given timestamp.
+ * Returns deduplicated users who made changes after `sinceTimestamp`.
+ */
+export function extractEditorsSince(
+  versions: FigmaVersion[],
+  sinceTimestamp: string,
+): FigmaUser[] {
+  const sinceDate = new Date(sinceTimestamp);
+  const recentVersions = versions.filter(
+    (v) => new Date(v.created_at) > sinceDate,
+  );
+
+  const seen = new Set<string>();
+  const editors: FigmaUser[] = [];
+
+  for (const version of recentVersions) {
+    if (!seen.has(version.user.id)) {
+      seen.add(version.user.id);
+      editors.push(version.user);
+    }
+  }
+
+  return editors;
 }
 
 export function filterWatchTargets(
