@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { detectChanges, formatConsoleReport, formatSlackReport, formatSlackBlocks } from "./diff-engine.js";
+import { detectChanges, formatConsoleReport, formatSlackReport, formatSlackBlocks, nodeUrl } from "./diff-engine.js";
 import type { FigmaNode } from "./figma-client.js";
 
 function makeNode(overrides: Partial<FigmaNode> & { id: string; name: string }): FigmaNode {
@@ -566,5 +566,66 @@ describe("formatSlackBlocks", () => {
       (b) => !b.text!.text.startsWith("*") && !b.text!.text.startsWith("File:"),
     );
     expect(changeSections.length).toBeGreaterThan(1);
+  });
+});
+
+describe("nodeUrl", () => {
+  it("converts colon-separated node IDs to hyphen format", () => {
+    expect(nodeUrl("abc123", "1:2")).toBe(
+      "https://www.figma.com/design/abc123?node-id=1-2",
+    );
+  });
+
+  it("handles nested node IDs", () => {
+    expect(nodeUrl("abc123", "100:200")).toBe(
+      "https://www.figma.com/design/abc123?node-id=100-200",
+    );
+  });
+});
+
+describe("node links in reports", () => {
+  const changes = [
+    {
+      pageName: "Home",
+      nodeId: "1:2",
+      nodeName: "Button",
+      nodeType: "FRAME",
+      kind: "added" as const,
+    },
+  ];
+
+  it("console report includes node URL", () => {
+    const report = formatConsoleReport("abc123", changes);
+    expect(report).toContain("figma.com/design/abc123?node-id=1-2");
+  });
+
+  it("Slack report includes node link", () => {
+    const report = formatSlackReport("abc123", changes);
+    expect(report).toContain("<https://www.figma.com/design/abc123?node-id=1-2|Button>");
+  });
+
+  it("Block Kit includes node link", () => {
+    const blocks = formatSlackBlocks("abc123", changes);
+    const content = blocks
+      .filter((b) => b.type === "section")
+      .map((b) => b.text?.text ?? "")
+      .join("\n");
+    expect(content).toContain("<https://www.figma.com/design/abc123?node-id=1-2|Button>");
+  });
+
+  it("escapes special characters in node names for Slack links", () => {
+    const specialChanges = [
+      {
+        pageName: "Home",
+        nodeId: "1:2",
+        nodeName: "Icon <beta> | v2 & more",
+        nodeType: "FRAME",
+        kind: "added" as const,
+      },
+    ];
+    const report = formatSlackReport("abc123", specialChanges);
+    // Display text should have escaped special chars
+    expect(report).toContain("Icon &lt;beta&gt; │ v2 &amp; more");
+    expect(report).toContain("│"); // pipe replaced with box drawing char
   });
 });
