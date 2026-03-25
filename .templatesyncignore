@@ -1,0 +1,23 @@
+# プロジェクト固有ファイル — テンプレート同期から除外
+
+# プロジェクト設定
+CLAUDE.md
+README.md
+package.json
+package-lock.json
+tsconfig.json
+vitest.config.ts
+SETUP.md
+
+# ソースコード
+src/
+
+# プロジェクト固有ワークフロー
+.github/workflows/ci.yml
+.github/workflows/figma-diff.yml
+
+# プロジェクト固有の Claude 設定
+.claude/settings.json
+
+# スナップショット・データ
+snapshots/

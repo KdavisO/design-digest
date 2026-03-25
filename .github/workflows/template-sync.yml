@@ -1,0 +1,29 @@
+name: Template Sync
+
+on:
+  schedule:
+    - cron: "0 9 * * 1" # 毎週月曜 9:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  template-sync:
+    runs-on: ubuntu-latest
+    if: github.repository != 'KdavisO/claude-project-template'
+    steps:
+      - uses: actions/checkout@v4
+        if: ${{ secrets.TEMPLATE_SYNC_TOKEN != '' }}
+        with:
+          token: ${{ secrets.TEMPLATE_SYNC_TOKEN }}
+
+      - uses: AndreasAugustin/actions-template-sync@8ec19a5f2721ffb81ff809aa340ddf75e6a85ea6 # v2
+        if: ${{ secrets.TEMPLATE_SYNC_TOKEN != '' }}
+        with:
+          source_repo_path: KdavisO/claude-project-template
+          upstream_branch: main
+          pr_title: "chore: テンプレートリポジトリの更新を反映"
+          pr_labels: chore,template-sync
+          pr_commit_msg: "chore: sync with template repository"
