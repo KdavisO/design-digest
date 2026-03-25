@@ -23,6 +23,7 @@ GitHub Actions (cron: weekdays 10:00 JST)
   ├─ Compare with previous snapshot (deep-diff)
   ├─ Claude API → AI summary (optional)
   ├─ Slack Webhook → structured change report
+  ├─ GitHub API → issue auto-creation (optional)
   └─ Backlog API → issue auto-creation (optional)
 ```
 
@@ -141,6 +142,30 @@ These ranges are back-of-the-envelope estimates based on Claude Sonnet 4 pricing
 Costs are **practically negligible** for most teams. Even with heavy usage, monthly costs are unlikely to exceed $1.
 
 For the latest per-token pricing, see the [Anthropic pricing page](https://www.anthropic.com/pricing).
+
+### GitHub Issue integration
+
+DesignDigest can automatically create GitHub Issues when design changes are detected, so that changes are tracked as actionable tasks.
+
+#### Setup
+
+1. Set the following environment variables (or GitHub Actions secrets). Either `GITHUB_ISSUE_TOKEN` or `GITHUB_TOKEN` (the default token in GitHub Actions) must be available for issue creation:
+
+| Variable | Required | Description |
+|---|---|---|
+| `GITHUB_ISSUE_ENABLED` | Yes | Set to `true` to enable |
+| `GITHUB_ISSUE_TOKEN` | No* | Explicit GitHub token for issue creation. Falls back to `GITHUB_TOKEN` (with `permissions: issues: write`) |
+| `GITHUB_ISSUE_REPO` | Yes | Target repository in `owner/repo` format |
+| `GITHUB_ISSUE_LABELS` | No | Comma-separated labels to add (e.g., `design,figma`) |
+| `GITHUB_ISSUE_ASSIGNEES` | No | Comma-separated GitHub usernames to assign |
+
+\* Required only if you do not want to rely on the default `GITHUB_TOKEN` provided by GitHub Actions.
+
+2. When `ANTHROPIC_API_KEY` is also set, Claude generates concise issue titles and a per-file AI summary included in the issue body. Otherwise, a default title with change counts is used and no AI summary is included. The AI summary shares a cache with the Backlog integration, so enabling both does not double API calls.
+
+#### Duplicate prevention
+
+Each GitHub Issue body includes a `[DesignDigest] {fileKey}` marker. Before creating a new issue, DesignDigest searches for open issues containing this marker. If a matching issue is found, a new one will not be created.
 
 ### Backlog integration
 

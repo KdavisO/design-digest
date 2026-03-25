@@ -6,6 +6,11 @@ export interface Config {
   slackWebhookUrl: string | undefined;
   anthropicApiKey: string | undefined;
   claudeSummaryEnabled: boolean;
+  githubIssueEnabled: boolean;
+  githubIssueToken: string | undefined;
+  githubIssueRepo: string | undefined;
+  githubIssueLabels: string[];
+  githubIssueAssignees: string[];
   backlogEnabled: boolean;
   backlogApiKey: string | undefined;
   backlogSpaceId: string | undefined;
@@ -32,6 +37,11 @@ export function loadConfig(): Config {
     slackWebhookUrl: process.env.SLACK_WEBHOOK_URL || undefined,
     anthropicApiKey: process.env.ANTHROPIC_API_KEY || undefined,
     claudeSummaryEnabled: process.env.CLAUDE_SUMMARY_ENABLED === "true",
+    githubIssueEnabled: process.env.GITHUB_ISSUE_ENABLED === "true",
+    githubIssueToken: process.env.GITHUB_ISSUE_TOKEN || process.env.GITHUB_TOKEN || undefined,
+    githubIssueRepo: process.env.GITHUB_ISSUE_REPO || undefined,
+    githubIssueLabels: csvList("GITHUB_ISSUE_LABELS"),
+    githubIssueAssignees: csvList("GITHUB_ISSUE_ASSIGNEES"),
     backlogEnabled: process.env.BACKLOG_ENABLED === "true",
     backlogApiKey: process.env.BACKLOG_API_KEY || undefined,
     backlogSpaceId: process.env.BACKLOG_SPACE_ID || undefined,

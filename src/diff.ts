@@ -21,6 +21,15 @@ import {
 import { generateSummary } from "./claude-summary.js";
 import { sendSlackNotification } from "./notify.js";
 import {
+  fetchOpenIssues,
+  findExistingGitHubIssue,
+  createGitHubIssue,
+  formatGitHubIssueBody,
+  generateGitHubIssueTitle,
+  githubDefaultTitle,
+} from "./github-issue-client.js";
+import type { GitHubIssueConfig } from "./github-issue-client.js";
+import {
   findExistingIssue,
   createBacklogIssue,
   formatBacklogDescription,
@@ -190,6 +199,116 @@ async function main(): Promise<void> {
     console.log("\nNo SLACK_WEBHOOK_URL configured — skipping notification.");
   }
 
+  // Memoize per-file AI summaries to avoid duplicate Claude API calls
+  // Caches both successes and failures so each fileKey is attempted at most once
+  const perFileSummaryCache = new Map<string, Promise<string | undefined>>();
+  function getPerFileSummary(
+    apiKey: string,
+    fileKey: string,
+    changes: ChangeEntry[],
+  ): Promise<string | undefined> {
+    const cached = perFileSummaryCache.get(fileKey);
+    if (cached !== undefined) return cached;
+    const promise = generateSummary(apiKey, changes).catch(() => undefined);
+    perFileSummaryCache.set(fileKey, promise);
+    return promise;
+  }
+
+  // Create GitHub Issues
+  if (
+    !config.dryRun &&
+    config.githubIssueEnabled &&
+    config.githubIssueToken &&
+    config.githubIssueRepo
+  ) {
+    console.log("\nCreating GitHub Issues...");
+    try {
+      const segments = config.githubIssueRepo
+        .trim()
+        .split("/")
+        .map((part) => part.trim())
+        .filter((part) => part.length > 0);
+      if (segments.length !== 2) {
+        throw new Error(
+          `Invalid GITHUB_ISSUE_REPO format: "${config.githubIssueRepo}" (expected "owner/repo")`,
+        );
+      }
+      const [owner, repo] = segments;
+
+      const ghIssueConfig: GitHubIssueConfig = {
+        token: config.githubIssueToken,
+        owner,
+        repo,
+        labels: config.githubIssueLabels,
+        assignees: config.githubIssueAssignees,
+      };
+
+      // Fetch open issues once for duplicate checking
+      const openIssues = await fetchOpenIssues(ghIssueConfig);
+
+      for (const result of allChanges.filter((r) => r.changes.length > 0)) {
+        // Check for duplicate issues (uses cached list)
+        const existing = findExistingGitHubIssue(openIssues, result.fileKey);
+        if (existing) {
+          console.log(
+            `  Skipping ${result.fileKey} — existing issue found: #${existing.number}`,
+          );
+          continue;
+        }
+
+        // Generate title
+        let title: string;
+        if (config.anthropicApiKey) {
+          try {
+            title = await generateGitHubIssueTitle(
+              config.anthropicApiKey,
+              result.changes,
+            );
+          } catch {
+            title = githubDefaultTitle(result.changes);
+          }
+        } else {
+          title = githubDefaultTitle(result.changes);
+        }
+
+        // Generate per-file AI summary (memoized)
+        const perFileSummary = config.anthropicApiKey
+          ? await getPerFileSummary(config.anthropicApiKey, result.fileKey, result.changes)
+          : undefined;
+
+        const body = formatGitHubIssueBody(
+          result.fileKey,
+          result.changes,
+          perFileSummary,
+        );
+
+        const issue = await createGitHubIssue(ghIssueConfig, title, body);
+        // Add to cache to prevent duplicates within the same run
+        openIssues.push({
+          number: issue.number,
+          title: issue.title,
+          html_url: issue.html_url,
+          body,
+          pull_request: undefined,
+        });
+        console.log(
+          `  GitHub Issue created: #${issue.number} — ${issue.title}`,
+        );
+      }
+    } catch (err) {
+      console.warn("GitHub Issue creation failed:", err);
+    }
+  } else if (config.dryRun && config.githubIssueEnabled) {
+    console.log("\nDry run mode — skipping GitHub Issue creation.");
+  } else if (config.githubIssueEnabled) {
+    const missing: string[] = [];
+    if (!config.githubIssueToken) missing.push("GITHUB_ISSUE_TOKEN or GITHUB_TOKEN");
+    if (!config.githubIssueRepo) missing.push("GITHUB_ISSUE_REPO");
+    console.warn(
+      `\nGitHub Issue integration enabled but missing required env vars: ${missing.join(", ")}`,
+    );
+  }
+
   // Create Backlog issues
   if (
     !config.dryRun &&
@@ -235,18 +354,10 @@ async function main(): Promise<void> {
           title = defaultTitle(result.changes);
         }
 
-        // Generate per-file AI summary for this Backlog issue
-        let perFileSummary: string | undefined;
-        if (config.anthropicApiKey) {
-          try {
-            perFileSummary = await generateSummary(
-              config.anthropicApiKey,
-              result.changes,
-            );
-          } catch {
-            perFileSummary = undefined;
-          }
-        }
+        // Generate per-file AI summary (memoized, shared with GitHub Issue)
+        const perFileSummary = config.anthropicApiKey
+          ? await getPerFileSummary(config.anthropicApiKey, result.fileKey, result.changes)
+          : undefined;
 
         const description = formatBacklogDescription(
           result.fileKey,
