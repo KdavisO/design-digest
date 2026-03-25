@@ -507,7 +507,7 @@ main().catch(async (err) => {
 
   // Send error notification to Slack (skip in dry-run for consistency)
   const webhookUrl = process.env.SLACK_WEBHOOK_URL;
-  const isDryRun = process.env.DRY_RUN === "1" || process.env.DRY_RUN === "true";
+  const isDryRun = process.env.DRY_RUN === "true";
   if (webhookUrl && !isDryRun) {
     try {
       const MAX_TEXT_LENGTH = 2900;
