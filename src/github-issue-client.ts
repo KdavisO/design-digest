@@ -14,7 +14,7 @@ export interface GitHubIssue {
   html_url: string;
 }
 
-interface GitHubIssueResponse {
+export interface GitHubIssueResponse {
   number: number;
   title: string;
   html_url: string;

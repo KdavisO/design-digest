@@ -149,15 +149,17 @@ DesignDigest can automatically create GitHub Issues when design changes are dete
 
 #### Setup
 
-1. Set the following environment variables (or GitHub Actions secrets):
+1. Set the following environment variables (or GitHub Actions secrets). Either `GITHUB_ISSUE_TOKEN` or `GITHUB_TOKEN` (the default token in GitHub Actions) must be available for issue creation:
 
 | Variable | Required | Description |
 |---|---|---|
 | `GITHUB_ISSUE_ENABLED` | Yes | Set to `true` to enable |
-| `GITHUB_ISSUE_TOKEN` | Yes | GitHub token that can create issues in `GITHUB_ISSUE_REPO` (falls back to `GITHUB_TOKEN` with `permissions: issues: write`) |
+| `GITHUB_ISSUE_TOKEN` | No* | Explicit GitHub token for issue creation. Falls back to `GITHUB_TOKEN` (with `permissions: issues: write`) |
 | `GITHUB_ISSUE_REPO` | Yes | Target repository in `owner/repo` format |
 | `GITHUB_ISSUE_LABELS` | No | Comma-separated labels to add (e.g., `design,figma`) |
 | `GITHUB_ISSUE_ASSIGNEES` | No | Comma-separated GitHub usernames to assign |
+
+\* Required only if you do not want to rely on the default `GITHUB_TOKEN` provided by GitHub Actions.
 
 2. When `ANTHROPIC_API_KEY` is also set, Claude generates concise issue titles and a per-file AI summary included in the issue body. Otherwise, a default title with change counts is used and no AI summary is included. The AI summary shares a cache with the Backlog integration, so enabling both does not double API calls.
 
