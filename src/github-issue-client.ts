@@ -65,6 +65,13 @@ export async function fetchOpenIssues(
     allIssues.push(...realIssues);
 
     if (issues.length < perPage) break;
+
+    if (page === maxPages && issues.length === perPage) {
+      console.warn(
+        `  Warning: Reached pagination limit (${maxPages * perPage} items). ` +
+          "Older DesignDigest issues may be missed for duplicate detection.",
+      );
+    }
   }
 
   return allIssues;
@@ -230,7 +237,11 @@ export async function generateGitHubIssueTitle(
         return `- Deleted: ${c.nodeName} (${c.nodeType}) in ${c.pageName}`;
       if (c.kind === "renamed")
         return `- Renamed: ${c.nodeName} (${c.nodeType}) in ${c.pageName}`;
-      return `- Modified: ${c.nodeName}.${c.property ?? ""} in ${c.pageName}`;
+      const target =
+        typeof c.property === "string" && c.property.length > 0
+          ? `${c.nodeName}.${c.property}`
+          : c.nodeName;
+      return `- Modified: ${target} in ${c.pageName}`;
     })
     .join("\n");
 
