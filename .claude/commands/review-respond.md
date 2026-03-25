@@ -301,9 +301,25 @@ gh api --paginate repos/{owner}/{repo}/pulls/{PR番号}/reviews | jq -s '
 
 ### 6. Copilotへの再レビューリクエスト
 
-`gh api repos/{owner}/{repo}/pulls/{PR番号}/requested_reviewers --method POST -f reviewers[]='copilot-pull-request-reviewer[bot]'` でCopilotに再レビューをリクエストする。
+Copilotに再レビューをリクエストし、成功を確認する:
 
-**ポーリング再開**（`--auto` モード時）: Copilot再レビューリクエスト完了後、`CronCreate` で新しいポーリングタスクを作成（cron: `*/5 * * * *`, prompt: `/review-respond --auto --max-idle 3`, recurring: true）。新しいタスクIDをcronタスクIDファイル（`/tmp/{project}-review-{ownerRepo}-cron-{PR番号}`）に上書きし、idleカウンターファイルを0にリセットする。※ 再開後の `--max-idle` は常に3に固定される（初回実行時に異なる値が指定されていても引き継がれない）。
+1. レビューリクエストを送信:
+   ```bash
+   gh api repos/{owner}/{repo}/pulls/{PR番号}/requested_reviewers --method POST -f 'reviewers[]=copilot-pull-request-reviewer[bot]'
+   ```
+
+2. リクエストが成功したか確認（`requested_reviewers` にCopilotが含まれているか）:
+   ```bash
+   gh api repos/{owner}/{repo}/pulls/{PR番号}/requested_reviewers -q '[.users[].login] | map(select(. == "Copilot" or . == "copilot-pull-request-reviewer[bot]")) | length'
+   ```
+   - 1以上 → 成功
+   - 0 → リトライへ
+
+3. リトライ（最大3回、5秒間隔。初回リクエストを含めて合計4回まで試行する）:
+   - 上記 1 → 2 を繰り返す
+   - 3回リトライ（合計4回試行）しても確認できない場合: 「⚠ Copilotレビューリクエストの確認に失敗しました」と警告を出力する
+
+**ポーリング再開**（`--auto` モード時）: Copilot再レビューリクエストの**成功が確認できた場合のみ**、`CronCreate` で新しいポーリングタスクを作成（cron: `*/5 * * * *`, prompt: `/review-respond --auto --max-idle 3`, recurring: true）。新しいタスクIDをcronタスクIDファイル（`/tmp/{project}-review-{ownerRepo}-cron-{PR番号}`）に上書きし、idleカウンターファイルを0にリセットする。※ 再開後の `--max-idle` は常に3に固定される（初回実行時に異なる値が指定されていても引き継がれない）。リクエストが失敗した場合はポーリングを再開せず、警告を出力し、この後の自動ポーリング再開処理のみスキップする（手順7以降は通常どおり実行する）。
 
 ### 7. レビューコメントへの返信
 

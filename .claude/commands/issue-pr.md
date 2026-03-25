@@ -44,8 +44,26 @@ GitHub Issue に対応するPRを作成してください。
 Closes #{issue番号}
 ```
 
-6. PR作成後、以下を設定する:
-   - reviewerに Copilot を設定: `gh api repos/{owner}/{repo}/pulls/{PR番号}/requested_reviewers --method POST -f reviewers[]='copilot-pull-request-reviewer[bot]'`
+6. PR作成後、Copilotレビューをリクエストし、成功を確認する:
+
+   1. レビューリクエストを送信:
+      ```bash
+      gh api repos/{owner}/{repo}/pulls/{PR番号}/requested_reviewers --method POST -f 'reviewers[]=copilot-pull-request-reviewer[bot]'
+      ```
+
+   2. リクエストが成功したか確認（`requested_reviewers` にCopilotが含まれているか）:
+      ```bash
+      gh api repos/{owner}/{repo}/pulls/{PR番号}/requested_reviewers -q '[.users[].login] | map(select(. == "Copilot" or . == "copilot-pull-request-reviewer[bot]")) | length'
+      ```
+      - 1以上 → 成功。手順7へ進む
+      - 0 → リトライへ
+
+   3. リトライ（最大3回、5秒間隔。初回リクエストを含めて合計4回まで試行する）:
+      - 上記 1 → 2 を繰り返す
+      - 3回リトライ（合計4回試行）しても `requested_reviewers` にCopilotが含まれない場合:
+        - `--auto` モード: 「⚠ Copilotレビューリクエストの確認に失敗しました。手動でレビューをリクエストしてください」と警告を出力し、**ポーリングは開始しない**（空振りが確定しているため）
+        - 通常モード: 同様の警告を出力
+
 7. 作成されたPRのURLを表示する
 
 ## 並列モード（worktree）で作業している場合
@@ -63,7 +81,7 @@ Closes #{issue番号}
 
 `--auto` フラグが指定されている場合、PR作成・Copilotレビューリクエスト完了後に自動で以下を実行する:
 
-1. `/loop 5m --skip-first /review-respond --auto --max-idle 3` を実行してレビュー対応の自動ポーリングを開始する（`--skip-first` により、PR作成直後のCI実行中の空振りを回避する）
+1. **Copilotレビューリクエストが成功した場合のみ**、`/loop 5m --skip-first /review-respond --auto --max-idle 3` を実行してレビュー対応の自動ポーリングを開始する（`--skip-first` により、PR作成直後のCI実行中の空振りを回避する）。手順6でリクエストが失敗した場合は、自動ポーリング開始などこの自動モード特有の後続処理（本節の手順2〜4）のみスキップし、警告メッセージを出力したうえで、PR URL表示やworktree案内など通常の処理フローはそのまま継続して終了する
 2. `gh pr view --json number -q .number` で現在のブランチに対応する `{PR番号}` を取得する
 3. `/loop`（CronCreate）の戻り値からcronタスクIDを取得し、タスクIDファイルに保存する:
    ```bash
