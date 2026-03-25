@@ -221,7 +221,7 @@ async function main(): Promise<void> {
     config.githubIssueToken &&
     config.githubIssueRepo
   ) {
-    console.log("\nCreating GitHub Issue...");
+    console.log("\nCreating GitHub Issues...");
     try {
       const segments = config.githubIssueRepo
         .trim()
