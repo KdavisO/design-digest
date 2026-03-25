@@ -284,6 +284,10 @@ export function formatConsoleReport(
         }
       }
     }
+    // Per-page summary counts
+    const pageSummary = formatSummaryCounts(pageChanges);
+    if (pageSummary) lines.push(`  ${pageSummary}`);
+
     lines.push("");
   }
 
@@ -351,6 +355,11 @@ export function formatSlackReport(
         }
       }
     }
+
+    // Per-page summary counts
+    const pageSummary = formatSummaryCounts(pageChanges);
+    if (pageSummary) lines.push(`  ${pageSummary}`);
+
     lines.push("");
   }
 
@@ -455,25 +464,17 @@ export function formatSlackBlocks(
       });
     }
 
+    // Per-page summary counts
+    const pageSummary = formatSummaryCounts(pageChanges);
+    if (pageSummary) {
+      blocks.push({
+        type: "context",
+        elements: [{ type: "mrkdwn", text: pageSummary }],
+      });
+    }
+
     blocks.push({ type: "divider" });
   }
-
-  // Summary counts
-  const added = changes.filter((c) => c.kind === "added").length;
-  const deleted = changes.filter((c) => c.kind === "deleted").length;
-  const modified = changes.filter((c) => c.kind === "modified").length;
-  const renamed = changes.filter((c) => c.kind === "renamed").length;
-
-  const parts: string[] = [];
-  if (added > 0) parts.push(`➕ ${added} added`);
-  if (deleted > 0) parts.push(`➖ ${deleted} deleted`);
-  if (modified > 0) parts.push(`✏️ ${modified} modified`);
-  if (renamed > 0) parts.push(`🏷️ ${renamed} renamed`);
-
-  blocks.push({
-    type: "context",
-    elements: [{ type: "mrkdwn", text: parts.join("  |  ") }],
-  });
 
   return blocks;
 }
@@ -555,6 +556,21 @@ function groupByPage(changes: ChangeEntry[]): Record<string, ChangeEntry[]> {
     (grouped[change.pageName] ??= []).push(change);
   }
   return grouped;
+}
+
+function formatSummaryCounts(changes: ChangeEntry[]): string {
+  const added = changes.filter((c) => c.kind === "added").length;
+  const deleted = changes.filter((c) => c.kind === "deleted").length;
+  const modified = changes.filter((c) => c.kind === "modified").length;
+  const renamed = changes.filter((c) => c.kind === "renamed").length;
+
+  const parts: string[] = [];
+  if (added > 0) parts.push(`➕ ${added} added`);
+  if (deleted > 0) parts.push(`➖ ${deleted} deleted`);
+  if (modified > 0) parts.push(`✏️ ${modified} modified`);
+  if (renamed > 0) parts.push(`🏷️ ${renamed} renamed`);
+
+  return parts.join("  |  ");
 }
 
 function groupByNode(changes: ChangeEntry[]): Record<string, ChangeEntry[]> {

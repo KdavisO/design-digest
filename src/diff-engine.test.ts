@@ -466,7 +466,7 @@ describe("formatSlackBlocks", () => {
     expect(sections[1].text!.text).toBe("*Settings*");
   });
 
-  it("includes context block with summary counts", () => {
+  it("includes per-page context block with summary counts", () => {
     const changes = [
       {
         pageName: "Home",
@@ -494,15 +494,17 @@ describe("formatSlackBlocks", () => {
       },
     ];
     const blocks = formatSlackBlocks("abc123", changes);
-    const context = blocks.find((b) => b.type === "context");
-    expect(context).toBeDefined();
-    const text = context!.elements![0].text;
+    const contextBlocks = blocks.filter(
+      (b) => b.type === "context" && b.elements?.some((e) => e.text.includes("added")),
+    );
+    expect(contextBlocks).toHaveLength(1);
+    const text = contextBlocks[0].elements![0].text;
     expect(text).toContain("1 added");
     expect(text).toContain("1 deleted");
     expect(text).toContain("1 modified");
   });
 
-  it("includes renamed count in context", () => {
+  it("includes per-page renamed count in context", () => {
     const changes = [
       {
         pageName: "Home",
@@ -516,8 +518,48 @@ describe("formatSlackBlocks", () => {
       },
     ];
     const blocks = formatSlackBlocks("abc123", changes);
-    const context = blocks.find((b) => b.type === "context");
-    expect(context!.elements![0].text).toContain("1 renamed");
+    const contextBlocks = blocks.filter(
+      (b) => b.type === "context" && b.elements?.some((e) => e.text.includes("renamed")),
+    );
+    expect(contextBlocks).toHaveLength(1);
+    expect(contextBlocks[0].elements![0].text).toContain("1 renamed");
+  });
+
+  it("shows separate per-page summary counts for multi-page changes", () => {
+    const changes = [
+      {
+        pageName: "Home",
+        nodeId: "1",
+        nodeName: "A",
+        nodeType: "FRAME",
+        kind: "added" as const,
+      },
+      {
+        pageName: "Home",
+        nodeId: "2",
+        nodeName: "B",
+        nodeType: "FRAME",
+        kind: "added" as const,
+      },
+      {
+        pageName: "Settings",
+        nodeId: "3",
+        nodeName: "C",
+        nodeType: "FRAME",
+        kind: "deleted" as const,
+      },
+    ];
+    const blocks = formatSlackBlocks("abc123", changes);
+    const contextBlocks = blocks.filter(
+      (b) => b.type === "context" && b.elements?.some((e) =>
+        e.text.includes("added") || e.text.includes("deleted"),
+      ),
+    );
+    expect(contextBlocks).toHaveLength(2);
+    expect(contextBlocks[0].elements![0].text).toContain("2 added");
+    expect(contextBlocks[0].elements![0].text).not.toContain("deleted");
+    expect(contextBlocks[1].elements![0].text).toContain("1 deleted");
+    expect(contextBlocks[1].elements![0].text).not.toContain("added");
   });
 
   it("aggregates when same node has more than 5 changes", () => {
