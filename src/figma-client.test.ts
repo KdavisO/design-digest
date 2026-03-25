@@ -278,4 +278,43 @@ describe("fetchNodesChunked", () => {
     // Only 1 fetch call (discovery), no extra re-fetch for leaf
     expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
+
+  it("passes depth-1 to child fetches", async () => {
+    const parent: FigmaNode = {
+      id: "1:0",
+      name: "Page",
+      type: "CANVAS",
+      children: [{ id: "1:1", name: "A", type: "FRAME" }],
+    };
+    const childA: FigmaNode = { id: "1:1", name: "A", type: "FRAME" };
+
+    const fetchSpy = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(mockNodesResponse({ "1:0": parent }))
+      .mockResolvedValueOnce(mockNodesResponse({ "1:1": childA }));
+
+    await fetchNodesChunked("token", "fileKey", ["1:0"], 3, 10);
+
+    // Second call should include depth=2 (parent depth 3 minus 1)
+    const secondUrl = fetchSpy.mock.calls[1][0] as string;
+    expect(secondUrl).toContain("depth=2");
+  });
+
+  it("passes depth=0 when parent depth is 1", async () => {
+    const parent: FigmaNode = {
+      id: "1:0",
+      name: "Page",
+      type: "CANVAS",
+      children: [{ id: "1:1", name: "A", type: "FRAME" }],
+    };
+    const childA: FigmaNode = { id: "1:1", name: "A", type: "FRAME" };
+
+    const fetchSpy = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(mockNodesResponse({ "1:0": parent }))
+      .mockResolvedValueOnce(mockNodesResponse({ "1:1": childA }));
+
+    await fetchNodesChunked("token", "fileKey", ["1:0"], 1, 10);
+
+    const secondUrl = fetchSpy.mock.calls[1][0] as string;
+    expect(secondUrl).toContain("depth=0");
+  });
 });
