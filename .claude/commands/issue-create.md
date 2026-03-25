@@ -25,14 +25,17 @@ description: 以下の内容からGitHub Issueを作成してください。
 
 4. 内容に応じて適切なラベルを選択:
    - `bug`: バグ修正
-   - `enhancement`: 新機能・改善
+   - `enhancement` or `feature`: 新機能
+   - `refactor`: リファクタリング
    - `documentation`: ドキュメント
+   <!-- プロジェクト固有のラベルを追加（例: `ui/ux`, `database` 等） -->
 5. 優先度ラベルを選択（必須）:
-   - `priority:high`: リリース前に必須（セキュリティ、重大バグなど）
-   - `priority:medium`: 重要だが緊急ではない
+   - `priority:high`: リリース前に必須（セキュリティ、法的要件など）
+   - `priority:medium`: リリース準備・アプリ化関連
    - `priority:low`: 機能追加・その他
 6. `gh issue create` でIssueを作成:
    ```
-   gh issue create --title "タイトル" --body "本文" --label "bug,priority:high"
+   gh issue create --title "タイトル" --body "本文" --label "ラベル1,priority:low"
    ```
+   ※ `priority:` は `high`, `medium`, `low` のいずれかを選択。ラベルは実際の値を指定すること（例: `--label "bug,priority:high"`）
 7. 作成されたIssueのURLを表示する
