@@ -218,8 +218,6 @@ async function main(): Promise<void> {
       try {
         await sendSlackNotification(config.slackWebhookUrl, {
           text: "DesignDigest: No changes detected across all monitored files.",
-          icon_url: config.slackIconUrl,
-          icon_emoji: config.slackIconEmoji,
         });
         console.log("Slack notification sent (no changes).");
       } catch (err) {
@@ -296,8 +294,6 @@ async function main(): Promise<void> {
     await sendSlackNotification(config.slackWebhookUrl, {
       text: fallbackText,
       blocks,
-      icon_url: config.slackIconUrl,
-      icon_emoji: config.slackIconEmoji,
     });
     console.log("Slack notification sent.");
   } else if (config.dryRun) {
@@ -544,8 +540,6 @@ main().catch(async (err) => {
                 }]
               : []),
           ],
-          icon_url: process.env.SLACK_ICON_URL || undefined,
-          icon_emoji: process.env.SLACK_ICON_EMOJI || undefined,
         }, controller.signal);
         console.log("Error notification sent to Slack.");
       } finally {
