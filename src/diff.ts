@@ -3,7 +3,9 @@ import { loadConfig } from "./config.js";
 import {
   fetchFile,
   fetchNodes,
+  fetchNodesChunked,
   fetchVersions,
+  checkVersionChanged,
   extractEditorsSince,
   filterWatchTargets,
   sanitizeNode,
@@ -45,39 +47,119 @@ async function processFile(
   config: Config,
   fileKey: string,
 ): Promise<{ fileKey: string; changes: ChangeEntry[]; editors: FigmaUser[] }> {
-  // Fetch current state from Figma
+  // Load previous snapshot
+  const previous = await loadSnapshot(config.snapshotDir, fileKey);
+
+  // Step 1: Version history check (skip if no previous snapshot)
+  let latestVersionId: string | undefined;
+  let versionCheckAttempted = false;
+  if (previous?.versionId) {
+    try {
+      console.log("  Checking version history...");
+      const versionCheck = await checkVersionChanged(
+        config.figmaToken,
+        fileKey,
+        previous.versionId,
+      );
+      versionCheckAttempted = true;
+      latestVersionId = versionCheck.latestVersionId;
+      if (!versionCheck.changed) {
+        console.log("  No version change detected — skipping snapshot comparison.");
+        return { fileKey, changes: [], editors: [] };
+      }
+      console.log("  Version changed — fetching current state.");
+    } catch (err) {
+      console.warn("  Version check failed, falling back to full fetch:", err);
+    }
+  }
+
+  // Step 2: Fetch current state from Figma
   let pages: Record<string, FigmaNode>;
 
   if (config.figmaWatchNodeIds.length > 0) {
     console.log(
       `  Fetching specific nodes: ${config.figmaWatchNodeIds.join(", ")}`,
     );
-    const nodes = await fetchNodes(
-      config.figmaToken,
-      fileKey,
-      config.figmaWatchNodeIds,
-    );
-    pages = {};
-    for (const [id, node] of Object.entries(nodes)) {
-      pages[node.name || id] = sanitizeNode(node);
+    try {
+      // Try normal fetch first
+      const nodes = await fetchNodes(
+        config.figmaToken,
+        fileKey,
+        config.figmaWatchNodeIds,
+        config.figmaNodeDepth,
+      );
+      pages = {};
+      for (const [id, node] of Object.entries(nodes)) {
+        pages[node.name || id] = sanitizeNode(node);
+      }
+    } catch (err) {
+      // Fall back to chunked fetch on payload size errors
+      if (isPayloadTooLargeError(err)) {
+        console.log("  Payload too large — switching to chunked fetch...");
+        const nodes = await fetchNodesChunked(
+          config.figmaToken,
+          fileKey,
+          config.figmaWatchNodeIds,
+          config.figmaNodeDepth,
+        );
+        pages = {};
+        for (const [id, node] of Object.entries(nodes)) {
+          pages[node.name || id] = sanitizeNode(node);
+        }
+      } else {
+        throw err;
+      }
     }
   } else {
     console.log(`  Fetching full file...`);
-    const file = await fetchFile(config.figmaToken, fileKey);
-    const targetPages = filterWatchTargets(file, config.figmaWatchPages);
-    pages = {};
-    for (const page of targetPages) {
-      pages[page.name] = sanitizeNode(page);
+    try {
+      const file = await fetchFile(config.figmaToken, fileKey, config.figmaNodeDepth);
+      const targetPages = filterWatchTargets(file, config.figmaWatchPages);
+      pages = {};
+      for (const page of targetPages) {
+        pages[page.name] = sanitizeNode(page);
+      }
+    } catch (err) {
+      if (isPayloadTooLargeError(err)) {
+        console.log("  Payload too large — fetching page list and chunking...");
+        const file = await fetchFile(config.figmaToken, fileKey, 1);
+        const targetPages = filterWatchTargets(file, config.figmaWatchPages);
+        const pageIds = targetPages.map((p) => p.id);
+        const nodes = await fetchNodesChunked(
+          config.figmaToken,
+          fileKey,
+          pageIds,
+          config.figmaNodeDepth,
+        );
+        pages = {};
+        for (const [id, node] of Object.entries(nodes)) {
+          pages[node.name || id] = sanitizeNode(node);
+        }
+      } else {
+        throw err;
+      }
     }
   }
 
   console.log(`  Fetched ${Object.keys(pages).length} page(s)`);
 
-  // Load previous snapshot
-  const previous = await loadSnapshot(config.snapshotDir, fileKey);
+  // Fetch latest version ID if we didn't already attempt it
+  if (!versionCheckAttempted) {
+    try {
+      const versions = await fetchVersions(config.figmaToken, fileKey);
+      if (versions.length > 0) latestVersionId = versions[0].id;
+    } catch {
+      // Non-critical — version ID is optional for snapshot
+    }
+  }
 
-  // Save current snapshot
-  await saveSnapshot(config.snapshotDir, fileKey, pages);
+  // Preserve previous versionId if we couldn't obtain a new one
+  if (!latestVersionId && previous?.versionId) {
+    latestVersionId = previous.versionId;
+  }
+
+  // Save current snapshot (with version ID)
+  await saveSnapshot(config.snapshotDir, fileKey, pages, latestVersionId);
   console.log("  Snapshot saved.");
 
   if (!previous) {
@@ -388,6 +470,15 @@ async function main(): Promise<void> {
   }
 
   console.log("Done.");
+}
+
+function isPayloadTooLargeError(err: unknown): boolean {
+  const message = (err instanceof Error ? err.message : String(err)).toLowerCase();
+  return (
+    message.includes("request too large") ||
+    message.includes("try a smaller request") ||
+    message.includes("invalid string length")
+  );
 }
 
 main().catch((err) => {

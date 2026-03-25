@@ -1,5 +1,11 @@
-import { describe, it, expect } from "vitest";
-import { sanitizeNode, filterWatchTargets, extractEditorsSince } from "./figma-client.js";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import {
+  sanitizeNode,
+  filterWatchTargets,
+  extractEditorsSince,
+  checkVersionChanged,
+  fetchNodesChunked,
+} from "./figma-client.js";
 import type { FigmaNode, FigmaFile, FigmaVersion } from "./figma-client.js";
 
 describe("sanitizeNode", () => {
@@ -147,5 +153,167 @@ describe("extractEditorsSince", () => {
   it("returns empty array for empty versions list", () => {
     const editors = extractEditorsSince([], "2024-01-01T00:00:00Z");
     expect(editors).toHaveLength(0);
+  });
+});
+
+describe("checkVersionChanged", () => {
+  const makeVersion = (id: string): FigmaVersion => ({
+    id,
+    created_at: "2024-01-01T00:00:00Z",
+    label: "",
+    description: "",
+    user: { id: "u1", handle: "Alice", img_url: "" },
+  });
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("returns changed=true when no previous version ID", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({ versions: [makeVersion("v2")] }),
+        { status: 200 },
+      ),
+    );
+
+    const result = await checkVersionChanged("token", "fileKey", undefined);
+    expect(result.changed).toBe(true);
+    expect(result.latestVersionId).toBe("v2");
+  });
+
+  it("returns changed=false when version matches", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({ versions: [makeVersion("v2")] }),
+        { status: 200 },
+      ),
+    );
+
+    const result = await checkVersionChanged("token", "fileKey", "v2");
+    expect(result.changed).toBe(false);
+  });
+
+  it("returns changed=true when version differs", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({ versions: [makeVersion("v3")] }),
+        { status: 200 },
+      ),
+    );
+
+    const result = await checkVersionChanged("token", "fileKey", "v2");
+    expect(result.changed).toBe(true);
+    expect(result.latestVersionId).toBe("v3");
+  });
+
+  it("returns changed=true with undefined latestVersionId when versions list is empty", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({ versions: [] }),
+        { status: 200 },
+      ),
+    );
+
+    const result = await checkVersionChanged("token", "fileKey", "v1");
+    expect(result.changed).toBe(true);
+    expect(result.latestVersionId).toBeUndefined();
+  });
+});
+
+describe("fetchNodesChunked", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  function mockNodesResponse(nodes: Record<string, FigmaNode>) {
+    const wrapped: Record<string, { document: FigmaNode }> = {};
+    for (const [id, node] of Object.entries(nodes)) {
+      wrapped[id] = { document: node };
+    }
+    return new Response(JSON.stringify({ nodes: wrapped }), { status: 200 });
+  }
+
+  it("fetches child nodes in batches", async () => {
+    const parent: FigmaNode = {
+      id: "1:0",
+      name: "Page",
+      type: "CANVAS",
+      children: [
+        { id: "1:1", name: "A", type: "FRAME" },
+        { id: "1:2", name: "B", type: "FRAME" },
+        { id: "1:3", name: "C", type: "FRAME" },
+      ],
+    };
+    const childA: FigmaNode = { id: "1:1", name: "A", type: "FRAME", fills: [] };
+    const childB: FigmaNode = { id: "1:2", name: "B", type: "FRAME", fills: [] };
+    const childC: FigmaNode = { id: "1:3", name: "C", type: "FRAME", fills: [] };
+
+    vi.spyOn(globalThis, "fetch")
+      // depth=1 fetch for parent
+      .mockResolvedValueOnce(mockNodesResponse({ "1:0": parent }))
+      // batch 1: A, B (batchSize=2)
+      .mockResolvedValueOnce(mockNodesResponse({ "1:1": childA, "1:2": childB }))
+      // batch 2: C
+      .mockResolvedValueOnce(mockNodesResponse({ "1:3": childC }));
+
+    const result = await fetchNodesChunked("token", "fileKey", ["1:0"], undefined, 2);
+
+    expect(result["1:0"]).toBeDefined();
+    expect(result["1:0"].children).toHaveLength(3);
+    expect(result["1:0"].children![0].name).toBe("A");
+    expect(result["1:0"].children![2].name).toBe("C");
+  });
+
+  it("uses shallow result directly for leaf nodes (no extra fetch)", async () => {
+    const leaf: FigmaNode = { id: "2:0", name: "Leaf", type: "TEXT" };
+
+    const fetchSpy = vi.spyOn(globalThis, "fetch")
+      // depth=1 batch discovery
+      .mockResolvedValueOnce(mockNodesResponse({ "2:0": leaf }));
+
+    const result = await fetchNodesChunked("token", "fileKey", ["2:0"]);
+
+    expect(result["2:0"].name).toBe("Leaf");
+    // Only 1 fetch call (discovery), no extra re-fetch for leaf
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("passes depth-1 to child fetches", async () => {
+    const parent: FigmaNode = {
+      id: "1:0",
+      name: "Page",
+      type: "CANVAS",
+      children: [{ id: "1:1", name: "A", type: "FRAME" }],
+    };
+    const childA: FigmaNode = { id: "1:1", name: "A", type: "FRAME" };
+
+    const fetchSpy = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(mockNodesResponse({ "1:0": parent }))
+      .mockResolvedValueOnce(mockNodesResponse({ "1:1": childA }));
+
+    await fetchNodesChunked("token", "fileKey", ["1:0"], 3, 10);
+
+    // Second call should include depth=2 (parent depth 3 minus 1)
+    const secondUrl = fetchSpy.mock.calls[1][0] as string;
+    expect(secondUrl).toContain("depth=2");
+  });
+
+  it("uses discovery result directly when depth=1 (no child refetch)", async () => {
+    const parent: FigmaNode = {
+      id: "1:0",
+      name: "Page",
+      type: "CANVAS",
+      children: [{ id: "1:1", name: "A", type: "FRAME" }],
+    };
+
+    const fetchSpy = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(mockNodesResponse({ "1:0": parent }));
+
+    const result = await fetchNodesChunked("token", "fileKey", ["1:0"], 1, 10);
+
+    // Only 1 fetch call (discovery), children from shallow result used directly
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(result["1:0"].children).toHaveLength(1);
   });
 });
