@@ -118,6 +118,29 @@ Find node IDs in Figma: right-click a frame → **Copy/Paste as** → **Copy lin
 
 Set `ANTHROPIC_API_KEY` and `CLAUDE_SUMMARY_ENABLED=true`. The AI will summarize changes with implementation impact analysis for frontend engineers.
 
+#### Claude API cost estimate
+
+DesignDigest uses **Claude Sonnet 4** (`claude-sonnet-4-20250514`) to generate change summaries. Each workflow execution makes a single Claude API call that summarizes changes across all monitored Figma files, with very low token usage.
+
+| Scenario | Input tokens | Output tokens |
+|---|---|---|
+| ~10 total changes across watched files | ~300–500 | ~200–400 |
+| ~50 total changes across watched files | ~1,000–1,500 | ~400–800 |
+
+**Monthly cost estimates** (weekday runs = ~22 days/month, single summary call per run; driven by total change volume, not file count):
+
+| Scenario (approx. total changes per run) | Monthly cost (USD) |
+|---|---|
+| Light usage (~10–20 changes/run) | ~$0.01–0.03 |
+| Moderate usage (~20–50 changes/run) | ~$0.03–0.10 |
+| Heavy usage (~50–100+ changes/run) | ~$0.10–0.25 |
+
+These ranges are back-of-the-envelope estimates based on Claude Sonnet 4 pricing as of 2025-05, assuming one weekday run per day (~22/month) and ~300–1,500 input tokens plus ~200–800 output tokens per run.
+
+Costs are **practically negligible** for most teams. Even with heavy usage, monthly costs are unlikely to exceed $1.
+
+For the latest per-token pricing, see the [Anthropic pricing page](https://www.anthropic.com/pricing).
+
 ### Slack setup
 
 1. Create a [Slack Incoming Webhook](https://api.slack.com/messaging/webhooks)
