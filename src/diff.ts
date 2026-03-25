@@ -52,6 +52,7 @@ async function processFile(
 
   // Step 1: Version history check (skip if no previous snapshot)
   let latestVersionId: string | undefined;
+  let versionCheckAttempted = false;
   if (previous?.versionId) {
     try {
       console.log("  Checking version history...");
@@ -60,6 +61,7 @@ async function processFile(
         fileKey,
         previous.versionId,
       );
+      versionCheckAttempted = true;
       latestVersionId = versionCheck.latestVersionId;
       if (!versionCheck.changed) {
         console.log("  No version change detected — skipping snapshot comparison.");
@@ -141,8 +143,8 @@ async function processFile(
 
   console.log(`  Fetched ${Object.keys(pages).length} page(s)`);
 
-  // Fetch latest version ID if we didn't already
-  if (!latestVersionId) {
+  // Fetch latest version ID if we didn't already attempt it
+  if (!versionCheckAttempted) {
     try {
       const versions = await fetchVersions(config.figmaToken, fileKey);
       if (versions.length > 0) latestVersionId = versions[0].id;
@@ -469,6 +471,7 @@ function isPayloadTooLargeError(err: unknown): boolean {
   const message = err instanceof Error ? err.message : String(err);
   return (
     message.includes("Request too large") ||
+    message.includes("try a smaller request") ||
     message.includes("Invalid string length")
   );
 }

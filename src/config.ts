@@ -66,8 +66,13 @@ function env(key: string): string {
 
 function parsePositiveInt(value: string | undefined): number | undefined {
   if (!value) return undefined;
+  if (!/^\d+$/.test(value)) {
+    throw new Error(
+      `Invalid FIGMA_NODE_DEPTH: "${value}" (must be a positive integer)`,
+    );
+  }
   const n = parseInt(value, 10);
-  if (!Number.isFinite(n) || n < 1) {
+  if (n < 1) {
     throw new Error(
       `Invalid FIGMA_NODE_DEPTH: "${value}" (must be a positive integer)`,
     );

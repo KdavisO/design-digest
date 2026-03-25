@@ -90,10 +90,11 @@ export async function fetchNodesChunked(
 ): Promise<Record<string, FigmaNode>> {
   const result: Record<string, FigmaNode> = {};
 
+  // Batch discovery: fetch all target nodes at depth=1 in one request
+  const shallowAll = await fetchNodes(token, fileKey, nodeIds, 1);
+
   for (const nodeId of nodeIds) {
-    // Get child IDs at depth=1
-    const shallow = await fetchNodes(token, fileKey, [nodeId], 1);
-    const parentNode = shallow[nodeId];
+    const parentNode = shallowAll[nodeId];
     if (!parentNode) continue;
 
     const childIds = (parentNode.children ?? []).map((c) => c.id);
@@ -115,11 +116,12 @@ export async function fetchNodesChunked(
       );
     }
 
-    // Fetch children in batches
+    // Fetch children in batches (depth-1 since children are one level deeper)
+    const childDepth = depth !== undefined && depth > 1 ? depth - 1 : depth;
     const children: FigmaNode[] = [];
     for (let i = 0; i < childIds.length; i += batchSize) {
       const batch = childIds.slice(i, i + batchSize);
-      const batchNodes = await fetchNodes(token, fileKey, batch, depth);
+      const batchNodes = await fetchNodes(token, fileKey, batch, childDepth);
       for (const id of batch) {
         if (batchNodes[id]) children.push(batchNodes[id]);
       }
