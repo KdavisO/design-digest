@@ -6,6 +6,7 @@ import type { FigmaNode } from "./figma-client.js";
 export interface Snapshot {
   timestamp: string;
   fileKey: string;
+  versionId?: string;
   pages: Record<string, FigmaNode>;
 }
 
@@ -28,6 +29,7 @@ export async function saveSnapshot(
   dir: string,
   fileKey: string,
   pages: Record<string, FigmaNode>,
+  versionId?: string,
 ): Promise<void> {
   if (!existsSync(dir)) {
     await mkdir(dir, { recursive: true });
@@ -36,6 +38,7 @@ export async function saveSnapshot(
   const snapshot: Snapshot = {
     timestamp: new Date().toISOString(),
     fileKey,
+    versionId,
     pages,
   };
 

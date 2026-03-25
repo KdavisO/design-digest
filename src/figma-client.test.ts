@@ -1,5 +1,5 @@
-import { describe, it, expect } from "vitest";
-import { sanitizeNode, filterWatchTargets, extractEditorsSince } from "./figma-client.js";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { sanitizeNode, filterWatchTargets, extractEditorsSince, checkVersionChanged } from "./figma-client.js";
 import type { FigmaNode, FigmaFile, FigmaVersion } from "./figma-client.js";
 
 describe("sanitizeNode", () => {
@@ -147,5 +147,57 @@ describe("extractEditorsSince", () => {
   it("returns empty array for empty versions list", () => {
     const editors = extractEditorsSince([], "2024-01-01T00:00:00Z");
     expect(editors).toHaveLength(0);
+  });
+});
+
+describe("checkVersionChanged", () => {
+  const makeVersion = (id: string): FigmaVersion => ({
+    id,
+    created_at: "2024-01-01T00:00:00Z",
+    label: "",
+    description: "",
+    user: { id: "u1", handle: "Alice", img_url: "" },
+  });
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("returns changed=true when no previous version ID", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({ versions: [makeVersion("v2")] }),
+        { status: 200 },
+      ),
+    );
+
+    const result = await checkVersionChanged("token", "fileKey", undefined);
+    expect(result.changed).toBe(true);
+    expect(result.latestVersionId).toBe("v2");
+  });
+
+  it("returns changed=false when version matches", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({ versions: [makeVersion("v2")] }),
+        { status: 200 },
+      ),
+    );
+
+    const result = await checkVersionChanged("token", "fileKey", "v2");
+    expect(result.changed).toBe(false);
+  });
+
+  it("returns changed=true when version differs", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({ versions: [makeVersion("v3")] }),
+        { status: 200 },
+      ),
+    );
+
+    const result = await checkVersionChanged("token", "fileKey", "v2");
+    expect(result.changed).toBe(true);
+    expect(result.latestVersionId).toBe("v3");
   });
 });

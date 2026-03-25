@@ -18,6 +18,7 @@ export interface Config {
   backlogIssueTypeId: string | undefined;
   backlogPriorityId: string | undefined;
   backlogAssigneeId: string | undefined;
+  figmaNodeDepth: number | undefined;
   snapshotDir: string;
   dryRun: boolean;
 }
@@ -49,6 +50,9 @@ export function loadConfig(): Config {
     backlogIssueTypeId: process.env.BACKLOG_ISSUE_TYPE_ID || undefined,
     backlogPriorityId: process.env.BACKLOG_PRIORITY_ID || undefined,
     backlogAssigneeId: process.env.BACKLOG_ASSIGNEE_ID || undefined,
+    figmaNodeDepth: process.env.FIGMA_NODE_DEPTH
+      ? parseInt(process.env.FIGMA_NODE_DEPTH, 10)
+      : undefined,
     snapshotDir: process.env.SNAPSHOT_DIR || "./snapshots",
     dryRun: process.env.DRY_RUN === "true",
   };

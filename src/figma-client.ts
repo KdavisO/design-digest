@@ -50,8 +50,10 @@ const NOISE_KEYS = new Set([
 export async function fetchFile(
   token: string,
   fileKey: string,
+  depth?: number,
 ): Promise<FigmaFile> {
-  const url = `${FIGMA_API_BASE}/files/${fileKey}`;
+  let url = `${FIGMA_API_BASE}/files/${fileKey}`;
+  if (depth !== undefined) url += `?depth=${depth}`;
   return figmaRequest(url, token);
 }
 
@@ -59,9 +61,11 @@ export async function fetchNodes(
   token: string,
   fileKey: string,
   nodeIds: string[],
+  depth?: number,
 ): Promise<Record<string, FigmaNode>> {
   const ids = nodeIds.join(",");
-  const url = `${FIGMA_API_BASE}/files/${fileKey}/nodes?ids=${encodeURIComponent(ids)}`;
+  let url = `${FIGMA_API_BASE}/files/${fileKey}/nodes?ids=${encodeURIComponent(ids)}`;
+  if (depth !== undefined) url += `&depth=${depth}`;
   const resp = await figmaRequest<{ nodes: Record<string, { document: FigmaNode }> }>(
     url,
     token,
@@ -71,6 +75,78 @@ export async function fetchNodes(
     result[id] = node.document;
   }
   return result;
+}
+
+/**
+ * Fetch nodes one by one to avoid payload size limits on large files.
+ * First fetches at depth=1 to get child IDs, then fetches each child individually.
+ */
+export async function fetchNodesChunked(
+  token: string,
+  fileKey: string,
+  nodeIds: string[],
+  depth?: number,
+): Promise<Record<string, FigmaNode>> {
+  const result: Record<string, FigmaNode> = {};
+
+  for (const nodeId of nodeIds) {
+    // Get child IDs at depth=1
+    const shallow = await fetchNodes(token, fileKey, [nodeId], 1);
+    const parentNode = shallow[nodeId];
+    if (!parentNode) continue;
+
+    const childIds = (parentNode.children ?? []).map((c) => c.id);
+
+    if (childIds.length === 0) {
+      // No children — fetch the node itself at full depth
+      const full = await fetchNodes(token, fileKey, [nodeId], depth);
+      if (full[nodeId]) result[nodeId] = full[nodeId];
+      continue;
+    }
+
+    console.log(
+      `  Chunked fetch: ${parentNode.name} (${childIds.length} children)`,
+    );
+
+    if (childIds.length > 100) {
+      console.warn(
+        `  Warning: ${childIds.length} child nodes — this may take a while and approach API rate limits.`,
+      );
+    }
+
+    // Fetch each child individually
+    const children: FigmaNode[] = [];
+    for (const childId of childIds) {
+      const childNodes = await fetchNodes(token, fileKey, [childId], depth);
+      if (childNodes[childId]) {
+        children.push(childNodes[childId]);
+      }
+    }
+
+    // Reassemble parent with fully fetched children
+    result[nodeId] = { ...parentNode, children };
+  }
+
+  return result;
+}
+
+/**
+ * Check if a file's version has changed since the given version ID.
+ * Returns the latest version ID, or null if unchanged.
+ */
+export async function checkVersionChanged(
+  token: string,
+  fileKey: string,
+  lastVersionId: string | undefined,
+): Promise<{ changed: boolean; latestVersionId: string }> {
+  const versions = await fetchVersions(token, fileKey);
+  const latestVersionId = versions.length > 0 ? versions[0].id : "";
+
+  if (!lastVersionId || latestVersionId !== lastVersionId) {
+    return { changed: true, latestVersionId };
+  }
+
+  return { changed: false, latestVersionId };
 }
 
 export async function fetchVersions(
