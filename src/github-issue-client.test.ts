@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
   formatGitHubIssueBody,
   githubDefaultTitle,
+  generateGitHubIssueTitle,
   fetchOpenIssues,
   findExistingGitHubIssue,
   createGitHubIssue,
@@ -301,5 +302,54 @@ describe("createGitHubIssue", () => {
     await expect(
       createGitHubIssue(mockConfig, "Test", "Body"),
     ).rejects.toThrow("GitHub issue creation failed: 404 Not Found");
+  });
+});
+
+describe("generateGitHubIssueTitle", () => {
+  const mockCreate = vi.fn();
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    mockCreate.mockReset();
+    vi.doMock("@anthropic-ai/sdk", () => ({
+      default: class MockAnthropic {
+        constructor() {}
+        messages = { create: mockCreate };
+      },
+    }));
+  });
+
+  it("returns Claude-generated title with [DesignDigest] prefix", async () => {
+    mockCreate.mockResolvedValueOnce({
+      content: [{ type: "text", text: "Update header font size and add banner" }],
+    });
+
+    const title = await generateGitHubIssueTitle("test-key", sampleChanges);
+    expect(title).toBe("[DesignDigest] Update header font size and add banner");
+  });
+
+  it("does not duplicate [DesignDigest] prefix when Claude includes it", async () => {
+    mockCreate.mockResolvedValueOnce({
+      content: [{ type: "text", text: "[DesignDigest] Header font update" }],
+    });
+
+    const title = await generateGitHubIssueTitle("test-key", sampleChanges);
+    expect(title).toBe("[DesignDigest] Header font update");
+    expect(title).not.toContain("[DesignDigest] [DesignDigest]");
+  });
+
+  it("throws when Claude API returns an error (caller handles fallback)", async () => {
+    mockCreate.mockRejectedValueOnce(new Error("API error"));
+
+    await expect(generateGitHubIssueTitle("test-key", sampleChanges)).rejects.toThrow("API error");
+  });
+
+  it("falls back to githubDefaultTitle when content array is empty", async () => {
+    mockCreate.mockResolvedValueOnce({
+      content: [],
+    });
+
+    const title = await generateGitHubIssueTitle("test-key", sampleChanges);
+    expect(title).toBe(githubDefaultTitle(sampleChanges));
   });
 });
