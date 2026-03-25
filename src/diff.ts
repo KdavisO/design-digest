@@ -209,7 +209,7 @@ async function main(): Promise<void> {
 
   if (totalChanges.length === 0) {
     const isBaseline = allChanges.some((r) => r.baselineCreated);
-    console.log("\nNo changes detected across all files.");
+    console.log("\n✅ No changes detected across all files.");
 
     // Send "no changes" Slack notification (skip on baseline creation)
     if (isBaseline) {
@@ -217,7 +217,24 @@ async function main(): Promise<void> {
     } else if (!config.dryRun && config.slackWebhookUrl) {
       try {
         await sendSlackNotification(config.slackWebhookUrl, {
-          text: "DesignDigest: No changes detected across all monitored files.",
+          text: "✅ No changes detected",
+          blocks: [
+            {
+              type: "header",
+              text: {
+                type: "plain_text",
+                text: "✅ No changes detected",
+                emoji: true,
+              },
+            },
+            {
+              type: "section",
+              text: {
+                type: "mrkdwn",
+                text: "All monitored Figma files are unchanged.",
+              },
+            },
+          ],
         });
         console.log("Slack notification sent (no changes).");
       } catch (err) {
