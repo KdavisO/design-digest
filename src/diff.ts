@@ -208,7 +208,21 @@ async function main(): Promise<void> {
   const totalChanges = allChanges.flatMap((r) => r.changes);
 
   if (totalChanges.length === 0) {
-    console.log("\nNo changes detected across all files. Done.");
+    console.log("\nNo changes detected across all files.");
+
+    // Send "no changes" Slack notification
+    if (!config.dryRun && config.slackWebhookUrl) {
+      try {
+        await sendSlackNotification(config.slackWebhookUrl, {
+          text: "DesignDigest: No changes detected across all monitored files.",
+        });
+        console.log("Slack notification sent (no changes).");
+      } catch (err) {
+        console.warn("Failed to send Slack notification:", err);
+      }
+    }
+
+    console.log("Done.");
     return;
   }
 
