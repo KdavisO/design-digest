@@ -425,8 +425,10 @@ export function formatSlackBlocks(
 
   // Changes grouped by page
   const grouped = groupByPage(changes);
+  const pageEntries = Object.entries(grouped);
 
-  for (const [pageName, pageChanges] of Object.entries(grouped)) {
+  for (let i = 0; i < pageEntries.length; i++) {
+    const [pageName, pageChanges] = pageEntries[i];
     // Page header
     blocks.push({
       type: "section",
@@ -473,7 +475,10 @@ export function formatSlackBlocks(
       });
     }
 
-    blocks.push({ type: "divider" });
+    // Add divider between pages, but not after the last page
+    if (i < pageEntries.length - 1) {
+      blocks.push({ type: "divider" });
+    }
   }
 
   return blocks;

@@ -390,6 +390,41 @@ describe("formatConsoleReport", () => {
     const report = formatConsoleReport("abc123", changes);
     expect(report).toContain("7 changes");
   });
+
+  it("includes per-page summary counts", () => {
+    const changes = [
+      {
+        pageName: "Home",
+        nodeId: "1",
+        nodeName: "A",
+        nodeType: "FRAME",
+        kind: "added" as const,
+      },
+      {
+        pageName: "Home",
+        nodeId: "2",
+        nodeName: "B",
+        nodeType: "FRAME",
+        kind: "deleted" as const,
+      },
+      {
+        pageName: "Settings",
+        nodeId: "3",
+        nodeName: "C",
+        nodeType: "TEXT",
+        kind: "modified" as const,
+        property: "fontSize",
+        oldValue: 14,
+        newValue: 16,
+      },
+    ];
+    const report = formatConsoleReport("abc123", changes);
+    // Home page summary
+    expect(report).toContain("1 added");
+    expect(report).toContain("1 deleted");
+    // Settings page summary
+    expect(report).toContain("1 modified");
+  });
 });
 
 describe("formatSlackReport", () => {
@@ -409,6 +444,28 @@ describe("formatSlackReport", () => {
     ];
     const report = formatSlackReport("abc123", changes);
     expect(report).toContain("figma.com/design/abc123");
+  });
+
+  it("includes per-page summary counts", () => {
+    const changes = [
+      {
+        pageName: "Home",
+        nodeId: "1",
+        nodeName: "A",
+        nodeType: "FRAME",
+        kind: "added" as const,
+      },
+      {
+        pageName: "Settings",
+        nodeId: "2",
+        nodeName: "B",
+        nodeType: "FRAME",
+        kind: "deleted" as const,
+      },
+    ];
+    const report = formatSlackReport("abc123", changes);
+    expect(report).toContain("1 added");
+    expect(report).toContain("1 deleted");
   });
 });
 
@@ -560,6 +617,46 @@ describe("formatSlackBlocks", () => {
     expect(contextBlocks[0].elements![0].text).not.toContain("deleted");
     expect(contextBlocks[1].elements![0].text).toContain("1 deleted");
     expect(contextBlocks[1].elements![0].text).not.toContain("added");
+  });
+
+  it("does not end with a trailing divider", () => {
+    const changes = [
+      {
+        pageName: "Home",
+        nodeId: "1",
+        nodeName: "A",
+        nodeType: "FRAME",
+        kind: "added" as const,
+      },
+    ];
+    const blocks = formatSlackBlocks("abc123", changes);
+    expect(blocks[blocks.length - 1].type).not.toBe("divider");
+  });
+
+  it("uses dividers between pages but not after the last page", () => {
+    const changes = [
+      {
+        pageName: "Home",
+        nodeId: "1",
+        nodeName: "A",
+        nodeType: "FRAME",
+        kind: "added" as const,
+      },
+      {
+        pageName: "Settings",
+        nodeId: "2",
+        nodeName: "B",
+        nodeType: "FRAME",
+        kind: "deleted" as const,
+      },
+    ];
+    const blocks = formatSlackBlocks("abc123", changes);
+    // Should have exactly one divider (between pages, plus the one after header)
+    // but the last block should NOT be a divider
+    expect(blocks[blocks.length - 1].type).not.toBe("divider");
+    // There should be at least one divider (between header section and pages, and between pages)
+    const dividers = blocks.filter((b) => b.type === "divider");
+    expect(dividers.length).toBeGreaterThan(0);
   });
 
   it("aggregates when same node has more than 5 changes", () => {
