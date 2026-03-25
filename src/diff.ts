@@ -21,6 +21,14 @@ import {
 import { generateSummary } from "./claude-summary.js";
 import { sendSlackNotification } from "./notify.js";
 import {
+  findExistingGitHubIssue,
+  createGitHubIssue,
+  formatGitHubIssueBody,
+  generateGitHubIssueTitle,
+  githubDefaultTitle,
+} from "./github-issue-client.js";
+import type { GitHubIssueConfig } from "./github-issue-client.js";
+import {
   findExistingIssue,
   createBacklogIssue,
   formatBacklogDescription,
@@ -188,6 +196,96 @@ async function main(): Promise<void> {
     console.log("\nDry run mode — skipping Slack notification.");
   } else if (!config.slackWebhookUrl) {
     console.log("\nNo SLACK_WEBHOOK_URL configured — skipping notification.");
+  }
+
+  // Create GitHub Issues
+  if (
+    !config.dryRun &&
+    config.githubIssueEnabled &&
+    config.githubIssueToken &&
+    config.githubIssueRepo
+  ) {
+    console.log("\nCreating GitHub Issue...");
+    try {
+      const [owner, repo] = config.githubIssueRepo.split("/");
+      if (!owner || !repo) {
+        throw new Error(
+          `Invalid GITHUB_ISSUE_REPO format: "${config.githubIssueRepo}" (expected "owner/repo")`,
+        );
+      }
+
+      const ghIssueConfig: GitHubIssueConfig = {
+        token: config.githubIssueToken,
+        owner,
+        repo,
+        labels: config.githubIssueLabels,
+        assignees: config.githubIssueAssignees,
+      };
+
+      for (const result of allChanges.filter((r) => r.changes.length > 0)) {
+        // Check for duplicate issues
+        const existing = await findExistingGitHubIssue(
+          ghIssueConfig,
+          result.fileKey,
+        );
+        if (existing) {
+          console.log(
+            `  Skipping ${result.fileKey} — existing issue found: #${existing.number}`,
+          );
+          continue;
+        }
+
+        // Generate title
+        let title: string;
+        if (config.anthropicApiKey) {
+          try {
+            title = await generateGitHubIssueTitle(
+              config.anthropicApiKey,
+              result.changes,
+            );
+          } catch {
+            title = githubDefaultTitle(result.changes);
+          }
+        } else {
+          title = githubDefaultTitle(result.changes);
+        }
+
+        // Generate per-file AI summary
+        let perFileSummary: string | undefined;
+        if (config.anthropicApiKey) {
+          try {
+            perFileSummary = await generateSummary(
+              config.anthropicApiKey,
+              result.changes,
+            );
+          } catch {
+            perFileSummary = undefined;
+          }
+        }
+
+        const body = formatGitHubIssueBody(
+          result.fileKey,
+          result.changes,
+          perFileSummary,
+        );
+
+        const issue = await createGitHubIssue(ghIssueConfig, title, body);
+        console.log(
+          `  GitHub Issue created: #${issue.number} — ${issue.title}`,
+        );
+      }
+    } catch (err) {
+      console.warn("GitHub Issue creation failed:", err);
+    }
+  } else if (config.dryRun && config.githubIssueEnabled) {
+    console.log("\nDry run mode — skipping GitHub Issue creation.");
+  } else if (config.githubIssueEnabled) {
+    const missing: string[] = [];
+    if (!config.githubIssueToken) missing.push("GITHUB_ISSUE_TOKEN or GITHUB_TOKEN");
+    if (!config.githubIssueRepo) missing.push("GITHUB_ISSUE_REPO");
+    console.warn(
+      `\nGitHub Issue integration enabled but missing required env vars: ${missing.join(", ")}`,
+    );
   }
 
   // Create Backlog issues
