@@ -502,7 +502,42 @@ function isPayloadTooLargeError(err: unknown): boolean {
   );
 }
 
-main().catch((err) => {
+main().catch(async (err) => {
   console.error("DesignDigest failed:", err);
+
+  // Send error notification to Slack
+  const webhookUrl = process.env.SLACK_WEBHOOK_URL;
+  if (webhookUrl) {
+    try {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      const stackTrace = err instanceof Error && err.stack
+        ? err.stack.split("\n").slice(0, 5).join("\n")
+        : "";
+
+      await sendSlackNotification(webhookUrl, {
+        text: `⚠️ DesignDigest failed: ${errorMessage}`,
+        blocks: [
+          {
+            type: "header",
+            text: { type: "plain_text", text: "⚠️ DesignDigest Error", emoji: true },
+          },
+          {
+            type: "section",
+            text: { type: "mrkdwn", text: `*Error:*\n\`\`\`${errorMessage}\`\`\`` },
+          },
+          ...(stackTrace
+            ? [{
+                type: "section" as const,
+                text: { type: "mrkdwn" as const, text: `*Stack trace:*\n\`\`\`${stackTrace}\`\`\`` },
+              }]
+            : []),
+        ],
+      });
+      console.log("Error notification sent to Slack.");
+    } catch (notifyErr) {
+      console.error("Failed to send error notification to Slack:", notifyErr);
+    }
+  }
+
   process.exit(1);
 });
