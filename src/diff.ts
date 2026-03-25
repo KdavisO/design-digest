@@ -20,6 +20,14 @@ import {
 } from "./diff-engine.js";
 import { generateSummary } from "./claude-summary.js";
 import { sendSlackNotification } from "./notify.js";
+import {
+  findExistingIssue,
+  createBacklogIssue,
+  formatBacklogDescription,
+  generateBacklogTitle,
+  defaultTitle,
+} from "./backlog-client.js";
+import type { BacklogConfig } from "./backlog-client.js";
 import type { FigmaNode } from "./figma-client.js";
 import type { ChangeEntry } from "./diff-engine.js";
 import type { Config } from "./config.js";
@@ -180,6 +188,92 @@ async function main(): Promise<void> {
     console.log("\nDry run mode — skipping Slack notification.");
   } else if (!config.slackWebhookUrl) {
     console.log("\nNo SLACK_WEBHOOK_URL configured — skipping notification.");
+  }
+
+  // Create Backlog issues
+  if (
+    !config.dryRun &&
+    config.backlogEnabled &&
+    config.backlogApiKey &&
+    config.backlogSpaceId &&
+    config.backlogProjectId
+  ) {
+    console.log("\nCreating Backlog issue...");
+    try {
+      const backlogConfig: BacklogConfig = {
+        apiKey: config.backlogApiKey,
+        spaceId: config.backlogSpaceId,
+        projectId: config.backlogProjectId,
+        issueTypeId: config.backlogIssueTypeId,
+        priorityId: config.backlogPriorityId,
+        assigneeId: config.backlogAssigneeId,
+      };
+
+      // Process each file with changes
+      for (const result of allChanges.filter((r) => r.changes.length > 0)) {
+        // Check for duplicate issues
+        const existing = await findExistingIssue(backlogConfig, result.fileKey);
+        if (existing) {
+          console.log(
+            `  Skipping ${result.fileKey} — existing issue found: ${existing.issueKey}`,
+          );
+          continue;
+        }
+
+        // Generate title (use Claude if available, otherwise default)
+        let title: string;
+        if (config.anthropicApiKey) {
+          try {
+            title = await generateBacklogTitle(
+              config.anthropicApiKey,
+              result.changes,
+            );
+          } catch {
+            title = defaultTitle(result.changes);
+          }
+        } else {
+          title = defaultTitle(result.changes);
+        }
+
+        // Generate per-file AI summary for this Backlog issue
+        let perFileSummary: string | undefined;
+        if (config.anthropicApiKey) {
+          try {
+            perFileSummary = await generateSummary(
+              config.anthropicApiKey,
+              result.changes,
+            );
+          } catch {
+            perFileSummary = undefined;
+          }
+        }
+
+        const description = formatBacklogDescription(
+          result.fileKey,
+          result.changes,
+          perFileSummary,
+        );
+
+        const issue = await createBacklogIssue(
+          backlogConfig,
+          title,
+          description,
+        );
+        console.log(`  Backlog issue created: ${issue.issueKey} — ${issue.summary}`);
+      }
+    } catch (err) {
+      console.warn("Backlog issue creation failed:", err);
+    }
+  } else if (config.dryRun && config.backlogEnabled) {
+    console.log("\nDry run mode — skipping Backlog issue creation.");
+  } else if (config.backlogEnabled) {
+    const missing: string[] = [];
+    if (!config.backlogApiKey) missing.push("BACKLOG_API_KEY");
+    if (!config.backlogSpaceId) missing.push("BACKLOG_SPACE_ID");
+    if (!config.backlogProjectId) missing.push("BACKLOG_PROJECT_ID");
+    console.warn(
+      `\nBacklog integration enabled but missing required env vars: ${missing.join(", ")}`,
+    );
   }
 
   console.log("Done.");
