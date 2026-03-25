@@ -122,8 +122,24 @@ describe("findExistingGitHubIssue", () => {
 
   it("returns null when no matching issues found", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(JSON.stringify([]), { status: 200 }),
+    );
+
+    const result = await findExistingGitHubIssue(mockConfig, "abc123");
+    expect(result).toBeNull();
+  });
+
+  it("returns null when issues exist but none contain marker", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
       new Response(
-        JSON.stringify({ total_count: 0, items: [] }),
+        JSON.stringify([
+          {
+            number: 1,
+            title: "Unrelated issue",
+            html_url: "https://github.com/test-owner/test-repo/issues/1",
+            body: "No marker here",
+          },
+        ]),
         { status: 200 },
       ),
     );
@@ -132,21 +148,27 @@ describe("findExistingGitHubIssue", () => {
     expect(result).toBeNull();
   });
 
-  it("returns existing issue when found", async () => {
-    const mockIssue = {
-      number: 42,
-      title: "[DesignDigest] design changes",
-      html_url: "https://github.com/test-owner/test-repo/issues/42",
-    };
+  it("returns existing issue when marker found in body", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
       new Response(
-        JSON.stringify({ total_count: 1, items: [mockIssue] }),
+        JSON.stringify([
+          {
+            number: 42,
+            title: "[DesignDigest] design changes",
+            html_url: "https://github.com/test-owner/test-repo/issues/42",
+            body: "[DesignDigest] abc123\n\nSome description",
+          },
+        ]),
         { status: 200 },
       ),
     );
 
     const result = await findExistingGitHubIssue(mockConfig, "abc123");
-    expect(result).toEqual(mockIssue);
+    expect(result).toEqual({
+      number: 42,
+      title: "[DesignDigest] design changes",
+      html_url: "https://github.com/test-owner/test-repo/issues/42",
+    });
   });
 
   it("throws on API error", async () => {
@@ -156,15 +178,12 @@ describe("findExistingGitHubIssue", () => {
 
     await expect(
       findExistingGitHubIssue(mockConfig, "abc123"),
-    ).rejects.toThrow("GitHub search failed: 401 Unauthorized");
+    ).rejects.toThrow("GitHub issues list failed: 401 Unauthorized");
   });
 
   it("sends correct authorization header", async () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
-      new Response(
-        JSON.stringify({ total_count: 0, items: [] }),
-        { status: 200 },
-      ),
+      new Response(JSON.stringify([]), { status: 200 }),
     );
 
     await findExistingGitHubIssue(mockConfig, "abc123");

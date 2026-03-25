@@ -154,7 +154,7 @@ DesignDigest can automatically create GitHub Issues when design changes are dete
 | Variable | Required | Description |
 |---|---|---|
 | `GITHUB_ISSUE_ENABLED` | Yes | Set to `true` to enable |
-| `GITHUB_ISSUE_TOKEN` | Yes | GitHub token with `issues:write` scope (falls back to `GITHUB_TOKEN`) |
+| `GITHUB_ISSUE_TOKEN` | Yes | GitHub token that can create issues in `GITHUB_ISSUE_REPO` (falls back to `GITHUB_TOKEN` with `permissions: issues: write`) |
 | `GITHUB_ISSUE_REPO` | Yes | Target repository in `owner/repo` format |
 | `GITHUB_ISSUE_LABELS` | No | Comma-separated labels to add (e.g., `design,figma`) |
 | `GITHUB_ISSUE_ASSIGNEES` | No | Comma-separated GitHub usernames to assign |

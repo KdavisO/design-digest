@@ -207,12 +207,17 @@ async function main(): Promise<void> {
   ) {
     console.log("\nCreating GitHub Issue...");
     try {
-      const [owner, repo] = config.githubIssueRepo.split("/");
-      if (!owner || !repo) {
+      const segments = config.githubIssueRepo
+        .trim()
+        .split("/")
+        .map((part) => part.trim())
+        .filter((part) => part.length > 0);
+      if (segments.length !== 2) {
         throw new Error(
           `Invalid GITHUB_ISSUE_REPO format: "${config.githubIssueRepo}" (expected "owner/repo")`,
         );
       }
+      const [owner, repo] = segments;
 
       const ghIssueConfig: GitHubIssueConfig = {
         token: config.githubIssueToken,

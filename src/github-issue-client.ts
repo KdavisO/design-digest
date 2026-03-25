@@ -18,30 +18,27 @@ interface GitHubIssueResponse {
   number: number;
   title: string;
   html_url: string;
-}
-
-interface GitHubSearchResponse {
-  total_count: number;
-  items: GitHubIssueResponse[];
+  body?: string;
 }
 
 /**
  * Search for existing open issues that match the given Figma file key
  * to prevent duplicate issue creation.
+ * Uses the Issues list API (higher rate limit) instead of the Search API.
  */
 export async function findExistingGitHubIssue(
   config: GitHubIssueConfig,
   fileKey: string,
 ): Promise<GitHubIssue | null> {
-  const query = `repo:${config.owner}/${config.repo} is:issue is:open "[DesignDigest] ${fileKey}" in:body`;
+  const marker = `[DesignDigest] ${fileKey}`;
   const params = new URLSearchParams({
-    q: query,
-    per_page: "1",
+    state: "open",
+    per_page: "100",
     sort: "created",
-    order: "desc",
+    direction: "desc",
   });
 
-  const url = `https://api.github.com/search/issues?${params}`;
+  const url = `https://api.github.com/repos/${config.owner}/${config.repo}/issues?${params}`;
   const response = await fetch(url, {
     headers: {
       Authorization: `Bearer ${config.token}`,
@@ -53,18 +50,21 @@ export async function findExistingGitHubIssue(
   if (!response.ok) {
     const body = await response.text().catch(() => "");
     throw new Error(
-      `GitHub search failed: ${response.status} ${response.statusText}${body ? ` - ${body}` : ""}`,
+      `GitHub issues list failed: ${response.status} ${response.statusText}${body ? ` - ${body}` : ""}`,
     );
   }
 
-  const data: GitHubSearchResponse = await response.json();
-  if (data.total_count === 0) return null;
+  const issues: GitHubIssueResponse[] = await response.json();
+  const match = issues.find(
+    (issue) => issue.body?.includes(marker),
+  );
 
-  const issue = data.items[0];
+  if (!match) return null;
+
   return {
-    number: issue.number,
-    title: issue.title,
-    html_url: issue.html_url,
+    number: match.number,
+    title: match.title,
+    html_url: match.html_url,
   };
 }
 
@@ -197,6 +197,8 @@ export async function generateGitHubIssueTitle(
         return `- Added: ${c.nodeName} (${c.nodeType}) in ${c.pageName}`;
       if (c.kind === "deleted")
         return `- Deleted: ${c.nodeName} (${c.nodeType}) in ${c.pageName}`;
+      if (c.kind === "renamed")
+        return `- Renamed: ${c.nodeName} (${c.nodeType}) in ${c.pageName}`;
       return `- Modified: ${c.nodeName}.${c.property ?? ""} in ${c.pageName}`;
     })
     .join("\n");
@@ -216,7 +218,11 @@ ${changesText}`,
   });
 
   const block = message.content[0];
-  if (block.type === "text") return `[DesignDigest] ${block.text.trim()}`;
+  if (block.type === "text") {
+    const title = block.text.trim();
+    const hasPrefix = /^\s*\[designdigest\]/i.test(title);
+    return hasPrefix ? title : `[DesignDigest] ${title}`;
+  }
   return githubDefaultTitle(changes);
 }
 
