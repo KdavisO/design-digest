@@ -9,13 +9,23 @@ globs: []
 
 - フォーマット: `{type}/{issue番号}-{英語の短い説明}`
 - type: `feat`, `fix`, `refactor`, `ui`, `docs`, `chore`
-- 例: `feat/12-add-slack-formatter`, `fix/8-snapshot-parsing`
+- 例: `feat/12-add-child-profile`, `fix/8-auth-redirect`
+
+## ブランチ作成手順
+
+新しいブランチを作成する前に、必ずmainを最新化する:
+
+1. `git checkout main`
+2. `git pull --ff-only origin main`
+3. `git checkout -b {type}/{issue番号}-{英語の短い説明}`
+
+※ worktree使用時は `git fetch origin main` の後に `git worktree add <path> -b {type}/{issue番号}-{英語の短い説明} origin/main` で最新のmainからブランチを作成する
 
 ## コミットメッセージ
 
 - プレフィックス必須: `feat:`, `fix:`, `refactor:`, `ui:`, `docs:`, `chore:`, `test:`
 - 日本語での記述可
-- 例: `feat: Slack Block Kit フォーマッター追加`
+- 例: `feat: 子どもプロフィール追加機能を実装`
 
 ## コードレビュー（セルフレビュー必須）
 
@@ -37,7 +47,7 @@ globs: []
 
 - [ ] **可読性・保守性**: コードは読みやすく、意図が明確か
 - [ ] **型安全性**: TypeScriptの型定義は適切か（`any`を避けているか）
-- [ ] **セキュリティ**: APIキーの露出、シークレットのハードコードはないか
+- [ ] **セキュリティ**: APIキーの露出、RLS設定漏れ、要配慮個人情報の暗号化漏れはないか
 - [ ] **既存コードとの整合性**: 命名規則、ディレクトリ構造、コーディングスタイルは統一されているか
 - [ ] **デバッグコード削除**: 不要な`console.log`、コメントアウトしたコード、TODO残りはないか
 - [ ] **コミットメッセージ**: 変更内容を適切に表しているか（プレフィックス付き）
@@ -63,8 +73,8 @@ globs: []
 
 - `Closes #XX` でIssueをリンクする
 - 本文に概要・変更内容・テスト方法を含める
-- assigneeに `KdavisO` を設定する
-- reviewerに `copilot-pull-request-reviewer[bot]` を設定する（`gh api` を使用）
+- assigneeに `{github_username}` を設定する
+- reviewerを設定する（`gh api` を使用）
 
 ## 自動コミットルール
 
@@ -92,7 +102,7 @@ globs: []
   - 新規ファイル追加 vs 既存ファイル修正
   - 機能実装 vs リファクタリング
   - 本体コード vs テストコード
-- 関連する複数ファイルの変更は1コミットにまとめてOK（例: モジュール + 型定義）
+- 関連する複数ファイルの変更は1コミットにまとめてOK（例: コンポーネント + 型定義）
 
 ## 禁止事項
 

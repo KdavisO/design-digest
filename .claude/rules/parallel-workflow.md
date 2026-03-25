@@ -1,5 +1,5 @@
 ---
-description: 並列作業（git worktree）を行う際のルール
+description: 並列開発（git worktree）を行う際のルール
 globs: []
 ---
 
@@ -13,13 +13,19 @@ globs: []
 Agent:
   prompt: "Issue #XXX を実装してください。要件: ..."
   isolation: "worktree"
-  run_in_background: true
+  run_in_background: true  # 複数 Issue を並列処理する場合
 ```
+
+## run_in_background の使い分け
+
+- **複数 Issue を並列処理する場合**: `run_in_background: true`（他のタスクと並行するため）
+- **単一 Issue のみの場合（`--auto` 含む）**: `run_in_background: false`（フォアグラウンドで実行し、進捗をリアルタイムで表示）
 
 ## 並列実行前の確認事項
 
 1. **変更ファイルの重複チェック**: 並列タスクが同じファイルを変更しないことを確認
-2. **Issue 間の依存関係を確認**: 並列実行可能なタスクであることを確認
+2. **DB マイグレーション競合チェック**: 同時にマイグレーションを追加する場合はタイムスタンプを分散
+3. **Issue 分類の参照**: `docs/issue-groups.md` で並列実行可能なグループを確認
 
 ## エージェントへの指示に含めるべき情報
 
@@ -27,7 +33,7 @@ Agent:
 - ブランチ命名規約（`{type}/{issue番号}-{説明}`）
 - コミット規約（プレフィックス必須、セルフレビュー必須）
 - 変更してはいけないファイル（他のエージェントが担当中のファイル）
-- `npm install` を最初に実行すること
+- `pnpm install` を最初に実行すること
 
 ## 並列数の上限
 

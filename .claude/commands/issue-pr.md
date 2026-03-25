@@ -2,11 +2,25 @@
 description: GitHub Issue に対応するPRを作成してください。
 ---
 
-GitHub Issue #$ARGUMENTS に対応するPRを作成してください。
+GitHub Issue に対応するPRを作成してください。
+
+引数: `$ARGUMENTS`
+
+## 引数の解析
+
+- `--auto` フラグの有無を判定する（指定があってもなくてもよいオプション）
+- `--auto` 以外のトークンから **Issue番号となる正の整数をちょうど1つだけ** 取得する
+  - Issue番号は必須（数値トークンが1つもない場合はエラーとし、「Issue番号（正の整数）を1つ指定してください」と案内する）
+  - 数値トークンが2つ以上ある場合もエラーとし、「Issue番号は1つだけ指定してください（例: `123` や `--auto 123`）」と案内する
+- 有効な例: `123`, `--auto 123`, `123 --auto`
+- エラーになる例:
+  - `--auto` のみ（Issue番号が指定されていない）
+  - `123 456`（数値トークンが複数ある）
+  - `--auto 123 456`（数値トークンが複数ある）
 
 ## 手順
 
-1. `gh issue view $ARGUMENTS` でIssue内容を確認する
+1. `gh issue view {issue番号}` でIssue内容を確認する
 2. `git status` と `git diff` で変更内容を確認する
 3. コミットされていない変更があればコミットする
 4. リモートにpushする:
@@ -27,11 +41,11 @@ GitHub Issue #$ARGUMENTS に対応するPRを作成してください。
 ## テスト方法
 <!-- 動作確認の手順 -->
 
-Closes #$ARGUMENTS
+Closes #{issue番号}
 ```
 
 6. PR作成後、以下を設定する:
-   - reviewerに Copilot を設定: `gh api repos/{owner}/{repo}/pulls/<PR番号>/requested_reviewers --method POST -f reviewers[]='copilot-pull-request-reviewer[bot]'`
+   - reviewerに Copilot を設定: `gh api repos/{owner}/{repo}/pulls/{PR番号}/requested_reviewers --method POST -f reviewers[]='copilot-pull-request-reviewer[bot]'`
 7. 作成されたPRのURLを表示する
 
 ## 並列モード（worktree）で作業している場合
@@ -44,3 +58,18 @@ Closes #$ARGUMENTS
 リンク worktree 内と判定できた場合は、PR作成後に以下を案内する:
 
 「PRのレビュー・マージが完了したら `/worktree-cleanup` でworktreeを削除できます」
+
+## 自動モード（`--auto`）
+
+`--auto` フラグが指定されている場合、PR作成・Copilotレビューリクエスト完了後に自動で以下を実行する:
+
+1. `/loop 5m --skip-first /review-respond --auto --max-idle 3` を実行してレビュー対応の自動ポーリングを開始する（`--skip-first` により、PR作成直後のCI実行中の空振りを回避する）
+2. `gh pr view --json number -q .number` で現在のブランチに対応する `{PR番号}` を取得する
+3. `/loop`（CronCreate）の戻り値からcronタスクIDを取得し、タスクIDファイルに保存する:
+   ```bash
+   echo "{タスクID}" > /tmp/{project}-review-{ownerRepo}-cron-{PR番号}
+   ```
+   ※ `{ownerRepo}`（`owner-repo` 形式の文字列）は `gh repo view --json owner,name -q '.owner.login + "-" + .name'` 等で取得する
+4. 「レビュー対応の自動ポーリングを開始しました（初回実行はスキップし、以降5分間隔でポーリング、3回連続空振りで停止）」と出力する
+
+`--auto` なしの場合は従来通りの動作（案内メッセージの表示のみ）。
