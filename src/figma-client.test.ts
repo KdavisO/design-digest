@@ -299,22 +299,21 @@ describe("fetchNodesChunked", () => {
     expect(secondUrl).toContain("depth=2");
   });
 
-  it("passes depth=0 when parent depth is 1", async () => {
+  it("uses discovery result directly when depth=1 (no child refetch)", async () => {
     const parent: FigmaNode = {
       id: "1:0",
       name: "Page",
       type: "CANVAS",
       children: [{ id: "1:1", name: "A", type: "FRAME" }],
     };
-    const childA: FigmaNode = { id: "1:1", name: "A", type: "FRAME" };
 
     const fetchSpy = vi.spyOn(globalThis, "fetch")
-      .mockResolvedValueOnce(mockNodesResponse({ "1:0": parent }))
-      .mockResolvedValueOnce(mockNodesResponse({ "1:1": childA }));
+      .mockResolvedValueOnce(mockNodesResponse({ "1:0": parent }));
 
-    await fetchNodesChunked("token", "fileKey", ["1:0"], 1, 10);
+    const result = await fetchNodesChunked("token", "fileKey", ["1:0"], 1, 10);
 
-    const secondUrl = fetchSpy.mock.calls[1][0] as string;
-    expect(secondUrl).toContain("depth=0");
+    // Only 1 fetch call (discovery), children from shallow result used directly
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(result["1:0"].children).toHaveLength(1);
   });
 });

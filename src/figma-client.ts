@@ -115,8 +115,14 @@ export async function fetchNodesChunked(
       );
     }
 
+    // If depth=1, children were already included in discovery — use them directly
+    if (depth === 1) {
+      result[nodeId] = parentNode;
+      continue;
+    }
+
     // Fetch children in batches (depth-1 since children are one level deeper)
-    const childDepth = depth !== undefined ? Math.max(depth - 1, 0) : depth;
+    const childDepth = depth !== undefined ? depth - 1 : depth;
     const children: FigmaNode[] = [];
     for (let i = 0; i < childIds.length; i += batchSize) {
       const batch = childIds.slice(i, i + batchSize);
