@@ -19,45 +19,67 @@ interface GitHubIssueResponse {
   title: string;
   html_url: string;
   body?: string;
+  pull_request?: unknown;
 }
 
 /**
- * Search for existing open issues that match the given Figma file key
- * to prevent duplicate issue creation.
- * Uses the Issues list API (higher rate limit) instead of the Search API.
+ * Fetch all open issues (excluding PRs) from the repository.
+ * Paginates up to maxPages to handle repos with many open issues.
+ * Call once per run and pass results to findExistingGitHubIssue.
  */
-export async function findExistingGitHubIssue(
+export async function fetchOpenIssues(
   config: GitHubIssueConfig,
-  fileKey: string,
-): Promise<GitHubIssue | null> {
-  const marker = `[DesignDigest] ${fileKey}`;
-  const params = new URLSearchParams({
-    state: "open",
-    per_page: "100",
-    sort: "created",
-    direction: "desc",
-  });
+): Promise<GitHubIssueResponse[]> {
+  const perPage = 100;
+  const maxPages = 10;
+  const allIssues: GitHubIssueResponse[] = [];
 
-  const url = `https://api.github.com/repos/${config.owner}/${config.repo}/issues?${params}`;
-  const response = await fetch(url, {
-    headers: {
-      Authorization: `Bearer ${config.token}`,
-      Accept: "application/vnd.github+json",
-      "X-GitHub-Api-Version": "2022-11-28",
-    },
-  });
+  for (let page = 1; page <= maxPages; page++) {
+    const params = new URLSearchParams({
+      state: "open",
+      per_page: perPage.toString(),
+      sort: "created",
+      direction: "desc",
+      page: page.toString(),
+    });
 
-  if (!response.ok) {
-    const body = await response.text().catch(() => "");
-    throw new Error(
-      `GitHub issues list failed: ${response.status} ${response.statusText}${body ? ` - ${body}` : ""}`,
-    );
+    const url = `https://api.github.com/repos/${config.owner}/${config.repo}/issues?${params}`;
+    const response = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${config.token}`,
+        Accept: "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+      },
+    });
+
+    if (!response.ok) {
+      const body = await response.text().catch(() => "");
+      throw new Error(
+        `GitHub issues list failed: ${response.status} ${response.statusText}${body ? ` - ${body}` : ""}`,
+      );
+    }
+
+    const issues: GitHubIssueResponse[] = await response.json();
+    // Filter out pull requests (GitHub API returns both issues and PRs)
+    const realIssues = issues.filter((issue) => !issue.pull_request);
+    allIssues.push(...realIssues);
+
+    if (issues.length < perPage) break;
   }
 
-  const issues: GitHubIssueResponse[] = await response.json();
-  const match = issues.find(
-    (issue) => issue.body?.includes(marker),
-  );
+  return allIssues;
+}
+
+/**
+ * Search cached open issues for one matching the given Figma file key.
+ * Pass the result of fetchOpenIssues to avoid repeated API calls.
+ */
+export function findExistingGitHubIssue(
+  openIssues: GitHubIssueResponse[],
+  fileKey: string,
+): GitHubIssue | null {
+  const marker = `[DesignDigest] ${fileKey}`;
+  const match = openIssues.find((issue) => issue.body?.includes(marker));
 
   if (!match) return null;
 
@@ -157,11 +179,16 @@ export function formatGitHubIssueBody(
             `- 🏷️ Renamed: \`${String(change.oldValue)}\` → \`${String(change.newValue)}\``,
           );
           break;
-        case "modified":
+        case "modified": {
+          const target =
+            change.property != null && change.property !== ""
+              ? `**${change.nodeName}**.${change.property}`
+              : `**${change.nodeName}**`;
           lines.push(
-            `- ✏️ Modified: **${change.nodeName}**.${change.property ?? ""}: \`${formatVal(change.oldValue)}\` → \`${formatVal(change.newValue)}\``,
+            `- ✏️ Modified: ${target}: \`${formatVal(change.oldValue)}\` → \`${formatVal(change.newValue)}\``,
           );
           break;
+        }
       }
     }
     lines.push("");
@@ -218,7 +245,7 @@ ${changesText}`,
   });
 
   const block = message.content[0];
-  if (block.type === "text") {
+  if (block?.type === "text") {
     const title = block.text.trim();
     const hasPrefix = /^\s*\[designdigest\]/i.test(title);
     return hasPrefix ? title : `[DesignDigest] ${title}`;

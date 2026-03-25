@@ -21,6 +21,7 @@ import {
 import { generateSummary } from "./claude-summary.js";
 import { sendSlackNotification } from "./notify.js";
 import {
+  fetchOpenIssues,
   findExistingGitHubIssue,
   createGitHubIssue,
   formatGitHubIssueBody,
@@ -227,12 +228,12 @@ async function main(): Promise<void> {
         assignees: config.githubIssueAssignees,
       };
 
+      // Fetch open issues once for duplicate checking
+      const openIssues = await fetchOpenIssues(ghIssueConfig);
+
       for (const result of allChanges.filter((r) => r.changes.length > 0)) {
-        // Check for duplicate issues
-        const existing = await findExistingGitHubIssue(
-          ghIssueConfig,
-          result.fileKey,
-        );
+        // Check for duplicate issues (uses cached list)
+        const existing = findExistingGitHubIssue(openIssues, result.fileKey);
         if (existing) {
           console.log(
             `  Skipping ${result.fileKey} — existing issue found: #${existing.number}`,

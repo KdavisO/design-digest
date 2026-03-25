@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
   formatGitHubIssueBody,
   githubDefaultTitle,
+  fetchOpenIssues,
   findExistingGitHubIssue,
   createGitHubIssue,
 } from "./github-issue-client.js";
@@ -115,60 +116,44 @@ describe("githubDefaultTitle", () => {
   });
 });
 
-describe("findExistingGitHubIssue", () => {
+describe("fetchOpenIssues", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
   });
 
-  it("returns null when no matching issues found", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
-      new Response(JSON.stringify([]), { status: 200 }),
-    );
-
-    const result = await findExistingGitHubIssue(mockConfig, "abc123");
-    expect(result).toBeNull();
-  });
-
-  it("returns null when issues exist but none contain marker", async () => {
+  it("fetches open issues and filters out PRs", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
       new Response(
         JSON.stringify([
-          {
-            number: 1,
-            title: "Unrelated issue",
-            html_url: "https://github.com/test-owner/test-repo/issues/1",
-            body: "No marker here",
-          },
+          { number: 1, title: "Issue", html_url: "url1", body: "body" },
+          { number: 2, title: "PR", html_url: "url2", body: "body", pull_request: {} },
         ]),
         { status: 200 },
       ),
     );
 
-    const result = await findExistingGitHubIssue(mockConfig, "abc123");
-    expect(result).toBeNull();
+    const issues = await fetchOpenIssues(mockConfig);
+    expect(issues).toHaveLength(1);
+    expect(issues[0].number).toBe(1);
   });
 
-  it("returns existing issue when marker found in body", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
-      new Response(
-        JSON.stringify([
-          {
-            number: 42,
-            title: "[DesignDigest] design changes",
-            html_url: "https://github.com/test-owner/test-repo/issues/42",
-            body: "[DesignDigest] abc123\n\nSome description",
-          },
-        ]),
-        { status: 200 },
-      ),
-    );
+  it("paginates until fewer results than per_page", async () => {
+    const page1 = Array.from({ length: 100 }, (_, i) => ({
+      number: i + 1,
+      title: `Issue ${i + 1}`,
+      html_url: `url${i + 1}`,
+      body: "body",
+    }));
+    const page2 = [
+      { number: 101, title: "Issue 101", html_url: "url101", body: "body" },
+    ];
 
-    const result = await findExistingGitHubIssue(mockConfig, "abc123");
-    expect(result).toEqual({
-      number: 42,
-      title: "[DesignDigest] design changes",
-      html_url: "https://github.com/test-owner/test-repo/issues/42",
-    });
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response(JSON.stringify(page1), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(page2), { status: 200 }));
+
+    const issues = await fetchOpenIssues(mockConfig);
+    expect(issues).toHaveLength(101);
   });
 
   it("throws on API error", async () => {
@@ -176,9 +161,9 @@ describe("findExistingGitHubIssue", () => {
       new Response("Unauthorized", { status: 401, statusText: "Unauthorized" }),
     );
 
-    await expect(
-      findExistingGitHubIssue(mockConfig, "abc123"),
-    ).rejects.toThrow("GitHub issues list failed: 401 Unauthorized");
+    await expect(fetchOpenIssues(mockConfig)).rejects.toThrow(
+      "GitHub issues list failed: 401 Unauthorized",
+    );
   });
 
   it("sends correct authorization header", async () => {
@@ -186,10 +171,42 @@ describe("findExistingGitHubIssue", () => {
       new Response(JSON.stringify([]), { status: 200 }),
     );
 
-    await findExistingGitHubIssue(mockConfig, "abc123");
+    await fetchOpenIssues(mockConfig);
 
     const headers = fetchSpy.mock.calls[0][1]?.headers as Record<string, string>;
     expect(headers.Authorization).toBe("Bearer ghp_test_token");
+  });
+});
+
+describe("findExistingGitHubIssue", () => {
+  it("returns null when no matching issues", () => {
+    const result = findExistingGitHubIssue([], "abc123");
+    expect(result).toBeNull();
+  });
+
+  it("returns null when issues exist but none contain marker", () => {
+    const issues = [
+      { number: 1, title: "Unrelated", html_url: "url1", body: "No marker" },
+    ];
+    const result = findExistingGitHubIssue(issues, "abc123");
+    expect(result).toBeNull();
+  });
+
+  it("returns existing issue when marker found in body", () => {
+    const issues = [
+      {
+        number: 42,
+        title: "[DesignDigest] changes",
+        html_url: "https://github.com/test/repo/issues/42",
+        body: "[DesignDigest] abc123\n\nSome description",
+      },
+    ];
+    const result = findExistingGitHubIssue(issues, "abc123");
+    expect(result).toEqual({
+      number: 42,
+      title: "[DesignDigest] changes",
+      html_url: "https://github.com/test/repo/issues/42",
+    });
   });
 });
 
