@@ -18,7 +18,7 @@ interface GitHubIssueResponse {
   number: number;
   title: string;
   html_url: string;
-  body?: string;
+  body: string | null;
   pull_request?: unknown;
 }
 
@@ -78,8 +78,12 @@ export function findExistingGitHubIssue(
   openIssues: GitHubIssueResponse[],
   fileKey: string,
 ): GitHubIssue | null {
-  const marker = `[DesignDigest] ${fileKey}`;
-  const match = openIssues.find((issue) => issue.body?.includes(marker));
+  const markerLine = `[DesignDigest] ${fileKey}`;
+  const escapedMarker = markerLine.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const markerRegex = new RegExp(`(^|\\n)${escapedMarker}(\\n|$)`);
+  const match = openIssues.find(
+    (issue) => issue.body != null && markerRegex.test(issue.body),
+  );
 
   if (!match) return null;
 

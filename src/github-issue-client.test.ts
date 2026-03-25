@@ -125,7 +125,7 @@ describe("fetchOpenIssues", () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
       new Response(
         JSON.stringify([
-          { number: 1, title: "Issue", html_url: "url1", body: "body" },
+          { number: 1, title: "Issue", html_url: "url1", body: "body", pull_request: undefined },
           { number: 2, title: "PR", html_url: "url2", body: "body", pull_request: {} },
         ]),
         { status: 200 },
@@ -186,7 +186,15 @@ describe("findExistingGitHubIssue", () => {
 
   it("returns null when issues exist but none contain marker", () => {
     const issues = [
-      { number: 1, title: "Unrelated", html_url: "url1", body: "No marker" },
+      { number: 1, title: "Unrelated", html_url: "url1", body: "No marker" as string | null },
+    ];
+    const result = findExistingGitHubIssue(issues, "abc123");
+    expect(result).toBeNull();
+  });
+
+  it("returns null when body is null", () => {
+    const issues = [
+      { number: 1, title: "Null body", html_url: "url1", body: null as string | null },
     ];
     const result = findExistingGitHubIssue(issues, "abc123");
     expect(result).toBeNull();
@@ -198,7 +206,7 @@ describe("findExistingGitHubIssue", () => {
         number: 42,
         title: "[DesignDigest] changes",
         html_url: "https://github.com/test/repo/issues/42",
-        body: "[DesignDigest] abc123\n\nSome description",
+        body: "[DesignDigest] abc123\n\nSome description" as string | null,
       },
     ];
     const result = findExistingGitHubIssue(issues, "abc123");
@@ -207,6 +215,19 @@ describe("findExistingGitHubIssue", () => {
       title: "[DesignDigest] changes",
       html_url: "https://github.com/test/repo/issues/42",
     });
+  });
+
+  it("does not false-match on substring fileKeys", () => {
+    const issues = [
+      {
+        number: 10,
+        title: "[DesignDigest] changes",
+        html_url: "url10",
+        body: "[DesignDigest] abc123456\n\nDescription" as string | null,
+      },
+    ];
+    const result = findExistingGitHubIssue(issues, "abc123");
+    expect(result).toBeNull();
   });
 });
 

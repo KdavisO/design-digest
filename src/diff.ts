@@ -199,6 +199,24 @@ async function main(): Promise<void> {
     console.log("\nNo SLACK_WEBHOOK_URL configured — skipping notification.");
   }
 
+  // Memoize per-file AI summaries to avoid duplicate Claude API calls
+  const perFileSummaryCache = new Map<string, string>();
+  async function getPerFileSummary(
+    apiKey: string,
+    fileKey: string,
+    changes: ChangeEntry[],
+  ): Promise<string | undefined> {
+    const cached = perFileSummaryCache.get(fileKey);
+    if (cached !== undefined) return cached;
+    try {
+      const summary = await generateSummary(apiKey, changes);
+      perFileSummaryCache.set(fileKey, summary);
+      return summary;
+    } catch {
+      return undefined;
+    }
+  }
+
   // Create GitHub Issues
   if (
     !config.dryRun &&
@@ -256,18 +274,10 @@ async function main(): Promise<void> {
           title = githubDefaultTitle(result.changes);
         }
 
-        // Generate per-file AI summary
-        let perFileSummary: string | undefined;
-        if (config.anthropicApiKey) {
-          try {
-            perFileSummary = await generateSummary(
-              config.anthropicApiKey,
-              result.changes,
-            );
-          } catch {
-            perFileSummary = undefined;
-          }
-        }
+        // Generate per-file AI summary (memoized)
+        const perFileSummary = config.anthropicApiKey
+          ? await getPerFileSummary(config.anthropicApiKey, result.fileKey, result.changes)
+          : undefined;
 
         const body = formatGitHubIssueBody(
           result.fileKey,
@@ -339,18 +349,10 @@ async function main(): Promise<void> {
           title = defaultTitle(result.changes);
         }
 
-        // Generate per-file AI summary for this Backlog issue
-        let perFileSummary: string | undefined;
-        if (config.anthropicApiKey) {
-          try {
-            perFileSummary = await generateSummary(
-              config.anthropicApiKey,
-              result.changes,
-            );
-          } catch {
-            perFileSummary = undefined;
-          }
-        }
+        // Generate per-file AI summary (memoized, shared with GitHub Issue)
+        const perFileSummary = config.anthropicApiKey
+          ? await getPerFileSummary(config.anthropicApiKey, result.fileKey, result.changes)
+          : undefined;
 
         const description = formatBacklogDescription(
           result.fileKey,
