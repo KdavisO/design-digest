@@ -81,7 +81,8 @@ export async function createBacklogIssue(
   summary: string,
   description: string,
 ): Promise<BacklogIssue> {
-  const url = `${baseUrl(config.spaceId)}/issues?apiKey=${config.apiKey}`;
+  const params = new URLSearchParams({ apiKey: config.apiKey });
+  const url = `${baseUrl(config.spaceId)}/issues?${params}`;
 
   const body: Record<string, string> = {
     projectId: config.projectId,
@@ -131,6 +132,8 @@ export function formatBacklogDescription(
 ): string {
   const figmaUrl = `https://www.figma.com/design/${fileKey}`;
   const lines: string[] = [
+    `[DesignDigest] ${fileKey}`,
+    "",
     `Figma file: ${figmaUrl}`,
     `${changes.length} change(s) detected`,
     "",

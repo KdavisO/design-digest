@@ -45,6 +45,7 @@ describe("formatBacklogDescription", () => {
   it("formats changes grouped by page", () => {
     const desc = formatBacklogDescription("abc123", sampleChanges);
 
+    expect(desc).toContain("[DesignDigest] abc123");
     expect(desc).toContain("https://www.figma.com/design/abc123");
     expect(desc).toContain("3 change(s) detected");
     expect(desc).toContain("### Home");

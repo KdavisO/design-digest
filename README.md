@@ -164,7 +164,7 @@ DesignDigest can automatically create [Backlog](https://backlog.com/) issues whe
 
 #### Duplicate prevention
 
-Issues are deduplicated by searching for existing issues with the `[DesignDigest]` prefix and file key. If a matching issue already exists, a new one will not be created.
+Each Backlog issue description includes a `[DesignDigest] {fileKey}` marker. Before creating a new issue, DesignDigest searches for existing issues containing this marker. If a matching issue is found, a new one will not be created.
 
 ### Slack setup
 

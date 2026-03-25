@@ -228,18 +228,30 @@ async function main(): Promise<void> {
               config.anthropicApiKey,
               result.changes,
             );
-            title = `[DesignDigest] ${title}`;
           } catch {
-            title = `[DesignDigest] ${defaultTitle(result.changes)}`;
+            title = defaultTitle(result.changes);
           }
         } else {
-          title = `[DesignDigest] ${defaultTitle(result.changes)}`;
+          title = defaultTitle(result.changes);
+        }
+
+        // Generate per-file AI summary for this Backlog issue
+        let perFileSummary: string | undefined;
+        if (config.anthropicApiKey) {
+          try {
+            perFileSummary = await generateSummary(
+              config.anthropicApiKey,
+              result.changes,
+            );
+          } catch {
+            perFileSummary = undefined;
+          }
         }
 
         const description = formatBacklogDescription(
           result.fileKey,
           result.changes,
-          aiSummary,
+          perFileSummary,
         );
 
         const issue = await createBacklogIssue(
@@ -254,8 +266,14 @@ async function main(): Promise<void> {
     }
   } else if (config.dryRun && config.backlogEnabled) {
     console.log("\nDry run mode — skipping Backlog issue creation.");
-  } else if (!config.backlogEnabled) {
-    // Silently skip when not enabled
+  } else if (config.backlogEnabled) {
+    const missing: string[] = [];
+    if (!config.backlogApiKey) missing.push("BACKLOG_API_KEY");
+    if (!config.backlogSpaceId) missing.push("BACKLOG_SPACE_ID");
+    if (!config.backlogProjectId) missing.push("BACKLOG_PROJECT_ID");
+    console.warn(
+      `\nBacklog integration enabled but missing required env vars: ${missing.join(", ")}`,
+    );
   }
 
   console.log("Done.");
