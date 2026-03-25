@@ -200,21 +200,18 @@ async function main(): Promise<void> {
   }
 
   // Memoize per-file AI summaries to avoid duplicate Claude API calls
-  const perFileSummaryCache = new Map<string, string>();
-  async function getPerFileSummary(
+  // Caches both successes and failures so each fileKey is attempted at most once
+  const perFileSummaryCache = new Map<string, Promise<string | undefined>>();
+  function getPerFileSummary(
     apiKey: string,
     fileKey: string,
     changes: ChangeEntry[],
   ): Promise<string | undefined> {
     const cached = perFileSummaryCache.get(fileKey);
     if (cached !== undefined) return cached;
-    try {
-      const summary = await generateSummary(apiKey, changes);
-      perFileSummaryCache.set(fileKey, summary);
-      return summary;
-    } catch {
-      return undefined;
-    }
+    const promise = generateSummary(apiKey, changes).catch(() => undefined);
+    perFileSummaryCache.set(fileKey, promise);
+    return promise;
   }
 
   // Create GitHub Issues
