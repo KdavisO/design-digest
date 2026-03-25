@@ -159,7 +159,7 @@ DesignDigest can automatically create GitHub Issues when design changes are dete
 | `GITHUB_ISSUE_LABELS` | No | Comma-separated labels to add (e.g., `design,figma`) |
 | `GITHUB_ISSUE_ASSIGNEES` | No | Comma-separated GitHub usernames to assign |
 
-2. When `ANTHROPIC_API_KEY` is also set, Claude generates concise issue titles. Otherwise, a default title with change counts is used.
+2. When `ANTHROPIC_API_KEY` is also set, Claude generates concise issue titles and a per-file AI summary included in the issue body. Otherwise, a default title with change counts is used and no AI summary is included. The AI summary shares a cache with the Backlog integration, so enabling both does not double API calls.
 
 #### Duplicate prevention
 

@@ -286,6 +286,14 @@ async function main(): Promise<void> {
         );
 
         const issue = await createGitHubIssue(ghIssueConfig, title, body);
+        // Add to cache to prevent duplicates within the same run
+        openIssues.push({
+          number: issue.number,
+          title: issue.title,
+          html_url: issue.html_url,
+          body,
+          pull_request: undefined,
+        });
         console.log(
           `  GitHub Issue created: #${issue.number} — ${issue.title}`,
         );
