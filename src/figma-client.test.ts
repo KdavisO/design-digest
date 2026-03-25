@@ -265,19 +265,17 @@ describe("fetchNodesChunked", () => {
     expect(result["1:0"].children![2].name).toBe("C");
   });
 
-  it("fetches node directly when it has no children", async () => {
+  it("uses shallow result directly for leaf nodes (no extra fetch)", async () => {
     const leaf: FigmaNode = { id: "2:0", name: "Leaf", type: "TEXT" };
-    const fullLeaf: FigmaNode = { id: "2:0", name: "Leaf", type: "TEXT", characters: "Hello" };
 
-    vi.spyOn(globalThis, "fetch")
-      // depth=1 fetch
-      .mockResolvedValueOnce(mockNodesResponse({ "2:0": leaf }))
-      // full depth fetch
-      .mockResolvedValueOnce(mockNodesResponse({ "2:0": fullLeaf }));
+    const fetchSpy = vi.spyOn(globalThis, "fetch")
+      // depth=1 batch discovery
+      .mockResolvedValueOnce(mockNodesResponse({ "2:0": leaf }));
 
     const result = await fetchNodesChunked("token", "fileKey", ["2:0"]);
 
     expect(result["2:0"].name).toBe("Leaf");
-    expect((result["2:0"] as Record<string, unknown>).characters).toBe("Hello");
+    // Only 1 fetch call (discovery), no extra re-fetch for leaf
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
 });

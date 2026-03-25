@@ -100,9 +100,8 @@ export async function fetchNodesChunked(
     const childIds = (parentNode.children ?? []).map((c) => c.id);
 
     if (childIds.length === 0) {
-      // No children — fetch the node itself at full depth
-      const full = await fetchNodes(token, fileKey, [nodeId], depth);
-      if (full[nodeId]) result[nodeId] = full[nodeId];
+      // No children — use the shallow result directly (leaf nodes are complete)
+      result[nodeId] = parentNode;
       continue;
     }
 

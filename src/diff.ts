@@ -153,6 +153,11 @@ async function processFile(
     }
   }
 
+  // Preserve previous versionId if we couldn't obtain a new one
+  if (!latestVersionId && previous?.versionId) {
+    latestVersionId = previous.versionId;
+  }
+
   // Save current snapshot (with version ID)
   await saveSnapshot(config.snapshotDir, fileKey, pages, latestVersionId);
   console.log("  Snapshot saved.");
