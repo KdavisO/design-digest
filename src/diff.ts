@@ -20,6 +20,14 @@ import {
 } from "./diff-engine.js";
 import { generateSummary } from "./claude-summary.js";
 import { sendSlackNotification } from "./notify.js";
+import {
+  findExistingIssue,
+  createBacklogIssue,
+  formatBacklogDescription,
+  generateBacklogTitle,
+  defaultTitle,
+} from "./backlog-client.js";
+import type { BacklogConfig } from "./backlog-client.js";
 import type { FigmaNode } from "./figma-client.js";
 import type { ChangeEntry } from "./diff-engine.js";
 import type { Config } from "./config.js";
@@ -180,6 +188,74 @@ async function main(): Promise<void> {
     console.log("\nDry run mode — skipping Slack notification.");
   } else if (!config.slackWebhookUrl) {
     console.log("\nNo SLACK_WEBHOOK_URL configured — skipping notification.");
+  }
+
+  // Create Backlog issues
+  if (
+    !config.dryRun &&
+    config.backlogEnabled &&
+    config.backlogApiKey &&
+    config.backlogSpaceId &&
+    config.backlogProjectId
+  ) {
+    console.log("\nCreating Backlog issue...");
+    try {
+      const backlogConfig: BacklogConfig = {
+        apiKey: config.backlogApiKey,
+        spaceId: config.backlogSpaceId,
+        projectId: config.backlogProjectId,
+        issueTypeId: config.backlogIssueTypeId,
+        priorityId: config.backlogPriorityId,
+        assigneeId: config.backlogAssigneeId,
+      };
+
+      // Process each file with changes
+      for (const result of allChanges.filter((r) => r.changes.length > 0)) {
+        // Check for duplicate issues
+        const existing = await findExistingIssue(backlogConfig, result.fileKey);
+        if (existing) {
+          console.log(
+            `  Skipping ${result.fileKey} — existing issue found: ${existing.issueKey}`,
+          );
+          continue;
+        }
+
+        // Generate title (use Claude if available, otherwise default)
+        let title: string;
+        if (config.anthropicApiKey) {
+          try {
+            title = await generateBacklogTitle(
+              config.anthropicApiKey,
+              result.changes,
+            );
+            title = `[DesignDigest] ${title}`;
+          } catch {
+            title = `[DesignDigest] ${defaultTitle(result.changes)}`;
+          }
+        } else {
+          title = `[DesignDigest] ${defaultTitle(result.changes)}`;
+        }
+
+        const description = formatBacklogDescription(
+          result.fileKey,
+          result.changes,
+          aiSummary,
+        );
+
+        const issue = await createBacklogIssue(
+          backlogConfig,
+          title,
+          description,
+        );
+        console.log(`  Backlog issue created: ${issue.issueKey} — ${issue.summary}`);
+      }
+    } catch (err) {
+      console.warn("Backlog issue creation failed:", err);
+    }
+  } else if (config.dryRun && config.backlogEnabled) {
+    console.log("\nDry run mode — skipping Backlog issue creation.");
+  } else if (!config.backlogEnabled) {
+    // Silently skip when not enabled
   }
 
   console.log("Done.");

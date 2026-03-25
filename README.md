@@ -22,7 +22,8 @@ GitHub Actions (cron: weekdays 10:00 JST)
   ├─ Figma REST API → fetch file JSON
   ├─ Compare with previous snapshot (deep-diff)
   ├─ Claude API → AI summary (optional)
-  └─ Slack Webhook → structured change report
+  ├─ Slack Webhook → structured change report
+  └─ Backlog API → issue auto-creation (optional)
 ```
 
 Snapshots are stored as GitHub Actions artifacts. No external infra needed.
@@ -140,6 +141,30 @@ These ranges are back-of-the-envelope estimates based on Claude Sonnet 4 pricing
 Costs are **practically negligible** for most teams. Even with heavy usage, monthly costs are unlikely to exceed $1.
 
 For the latest per-token pricing, see the [Anthropic pricing page](https://www.anthropic.com/pricing).
+
+### Backlog integration
+
+DesignDigest can automatically create [Backlog](https://backlog.com/) issues when design changes are detected.
+
+#### Setup
+
+1. Set the following environment variables (or GitHub Actions secrets):
+
+| Variable | Required | Description |
+|---|---|---|
+| `BACKLOG_ENABLED` | Yes | Set to `true` to enable |
+| `BACKLOG_API_KEY` | Yes | Backlog API key |
+| `BACKLOG_SPACE_ID` | Yes | Backlog space ID (e.g., `yourteam` for `yourteam.backlog.com`) |
+| `BACKLOG_PROJECT_ID` | Yes | Backlog project ID (numeric) |
+| `BACKLOG_ISSUE_TYPE_ID` | No | Issue type ID |
+| `BACKLOG_PRIORITY_ID` | No | Priority ID |
+| `BACKLOG_ASSIGNEE_ID` | No | Assignee user ID |
+
+2. When `ANTHROPIC_API_KEY` is also set, Claude generates concise issue titles from the changes. Otherwise, a default title with change counts is used.
+
+#### Duplicate prevention
+
+Issues are deduplicated by searching for existing issues with the `[DesignDigest]` prefix and file key. If a matching issue already exists, a new one will not be created.
 
 ### Slack setup
 
