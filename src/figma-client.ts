@@ -78,14 +78,15 @@ export async function fetchNodes(
 }
 
 /**
- * Fetch nodes one by one to avoid payload size limits on large files.
- * First fetches at depth=1 to get child IDs, then fetches each child individually.
+ * Fetch nodes in batches to avoid payload size limits on large files.
+ * First fetches at depth=1 to get child IDs, then fetches children in batches.
  */
 export async function fetchNodesChunked(
   token: string,
   fileKey: string,
   nodeIds: string[],
   depth?: number,
+  batchSize: number = 5,
 ): Promise<Record<string, FigmaNode>> {
   const result: Record<string, FigmaNode> = {};
 
@@ -105,7 +106,7 @@ export async function fetchNodesChunked(
     }
 
     console.log(
-      `  Chunked fetch: ${parentNode.name} (${childIds.length} children)`,
+      `  Chunked fetch: ${parentNode.name} (${childIds.length} children, batch size ${batchSize})`,
     );
 
     if (childIds.length > 100) {
@@ -114,12 +115,13 @@ export async function fetchNodesChunked(
       );
     }
 
-    // Fetch each child individually
+    // Fetch children in batches
     const children: FigmaNode[] = [];
-    for (const childId of childIds) {
-      const childNodes = await fetchNodes(token, fileKey, [childId], depth);
-      if (childNodes[childId]) {
-        children.push(childNodes[childId]);
+    for (let i = 0; i < childIds.length; i += batchSize) {
+      const batch = childIds.slice(i, i + batchSize);
+      const batchNodes = await fetchNodes(token, fileKey, batch, depth);
+      for (const id of batch) {
+        if (batchNodes[id]) children.push(batchNodes[id]);
       }
     }
 
@@ -132,17 +134,18 @@ export async function fetchNodesChunked(
 
 /**
  * Check if a file's version has changed since the given version ID.
- * Returns the latest version ID, or null if unchanged.
+ * Returns `{ changed, latestVersionId }` where `latestVersionId` may be
+ * undefined if the versions list is empty.
  */
 export async function checkVersionChanged(
   token: string,
   fileKey: string,
   lastVersionId: string | undefined,
-): Promise<{ changed: boolean; latestVersionId: string }> {
+): Promise<{ changed: boolean; latestVersionId: string | undefined }> {
   const versions = await fetchVersions(token, fileKey);
-  const latestVersionId = versions.length > 0 ? versions[0].id : "";
+  const latestVersionId = versions.length > 0 ? versions[0].id : undefined;
 
-  if (!lastVersionId || latestVersionId !== lastVersionId) {
+  if (!lastVersionId || !latestVersionId || latestVersionId !== lastVersionId) {
     return { changed: true, latestVersionId };
   }
 

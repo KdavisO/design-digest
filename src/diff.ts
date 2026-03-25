@@ -92,8 +92,7 @@ async function processFile(
       }
     } catch (err) {
       // Fall back to chunked fetch on payload size errors
-      const message = err instanceof Error ? err.message : String(err);
-      if (message.includes("400") || message.includes("Invalid string length")) {
+      if (isPayloadTooLargeError(err)) {
         console.log("  Payload too large — switching to chunked fetch...");
         const nodes = await fetchNodesChunked(
           config.figmaToken,
@@ -111,11 +110,32 @@ async function processFile(
     }
   } else {
     console.log(`  Fetching full file...`);
-    const file = await fetchFile(config.figmaToken, fileKey, config.figmaNodeDepth);
-    const targetPages = filterWatchTargets(file, config.figmaWatchPages);
-    pages = {};
-    for (const page of targetPages) {
-      pages[page.name] = sanitizeNode(page);
+    try {
+      const file = await fetchFile(config.figmaToken, fileKey, config.figmaNodeDepth);
+      const targetPages = filterWatchTargets(file, config.figmaWatchPages);
+      pages = {};
+      for (const page of targetPages) {
+        pages[page.name] = sanitizeNode(page);
+      }
+    } catch (err) {
+      if (isPayloadTooLargeError(err)) {
+        console.log("  Payload too large — fetching page list and chunking...");
+        const file = await fetchFile(config.figmaToken, fileKey, 1);
+        const targetPages = filterWatchTargets(file, config.figmaWatchPages);
+        const pageIds = targetPages.map((p) => p.id);
+        const nodes = await fetchNodesChunked(
+          config.figmaToken,
+          fileKey,
+          pageIds,
+          config.figmaNodeDepth,
+        );
+        pages = {};
+        for (const [id, node] of Object.entries(nodes)) {
+          pages[node.name || id] = sanitizeNode(node);
+        }
+      } else {
+        throw err;
+      }
     }
   }
 
@@ -443,6 +463,14 @@ async function main(): Promise<void> {
   }
 
   console.log("Done.");
+}
+
+function isPayloadTooLargeError(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : String(err);
+  return (
+    message.includes("Request too large") ||
+    message.includes("Invalid string length")
+  );
 }
 
 main().catch((err) => {

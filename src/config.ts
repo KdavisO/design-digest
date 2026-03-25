@@ -50,9 +50,7 @@ export function loadConfig(): Config {
     backlogIssueTypeId: process.env.BACKLOG_ISSUE_TYPE_ID || undefined,
     backlogPriorityId: process.env.BACKLOG_PRIORITY_ID || undefined,
     backlogAssigneeId: process.env.BACKLOG_ASSIGNEE_ID || undefined,
-    figmaNodeDepth: process.env.FIGMA_NODE_DEPTH
-      ? parseInt(process.env.FIGMA_NODE_DEPTH, 10)
-      : undefined,
+    figmaNodeDepth: parsePositiveInt(process.env.FIGMA_NODE_DEPTH),
     snapshotDir: process.env.SNAPSHOT_DIR || "./snapshots",
     dryRun: process.env.DRY_RUN === "true",
   };
@@ -64,6 +62,17 @@ function env(key: string): string {
     throw new Error(`Missing required environment variable: ${key}`);
   }
   return value;
+}
+
+function parsePositiveInt(value: string | undefined): number | undefined {
+  if (!value) return undefined;
+  const n = parseInt(value, 10);
+  if (!Number.isFinite(n) || n < 1) {
+    throw new Error(
+      `Invalid FIGMA_NODE_DEPTH: "${value}" (must be a positive integer)`,
+    );
+  }
+  return n;
 }
 
 function csvList(key: string): string[] {

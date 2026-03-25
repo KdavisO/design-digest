@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { sanitizeNode, filterWatchTargets, extractEditorsSince, checkVersionChanged } from "./figma-client.js";
+import { sanitizeNode, filterWatchTargets, extractEditorsSince, checkVersionChanged, fetchNodesChunked } from "./figma-client.js";
 import type { FigmaNode, FigmaFile, FigmaVersion } from "./figma-client.js";
 
 describe("sanitizeNode", () => {
@@ -199,5 +199,79 @@ describe("checkVersionChanged", () => {
     const result = await checkVersionChanged("token", "fileKey", "v2");
     expect(result.changed).toBe(true);
     expect(result.latestVersionId).toBe("v3");
+  });
+
+  it("returns changed=true with undefined latestVersionId when versions list is empty", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({ versions: [] }),
+        { status: 200 },
+      ),
+    );
+
+    const result = await checkVersionChanged("token", "fileKey", "v1");
+    expect(result.changed).toBe(true);
+    expect(result.latestVersionId).toBeUndefined();
+  });
+});
+
+describe("fetchNodesChunked", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  function mockNodesResponse(nodes: Record<string, FigmaNode>) {
+    const wrapped: Record<string, { document: FigmaNode }> = {};
+    for (const [id, node] of Object.entries(nodes)) {
+      wrapped[id] = { document: node };
+    }
+    return new Response(JSON.stringify({ nodes: wrapped }), { status: 200 });
+  }
+
+  it("fetches child nodes in batches", async () => {
+    const parent: FigmaNode = {
+      id: "1:0",
+      name: "Page",
+      type: "CANVAS",
+      children: [
+        { id: "1:1", name: "A", type: "FRAME" },
+        { id: "1:2", name: "B", type: "FRAME" },
+        { id: "1:3", name: "C", type: "FRAME" },
+      ],
+    };
+    const childA: FigmaNode = { id: "1:1", name: "A", type: "FRAME", fills: [] };
+    const childB: FigmaNode = { id: "1:2", name: "B", type: "FRAME", fills: [] };
+    const childC: FigmaNode = { id: "1:3", name: "C", type: "FRAME", fills: [] };
+
+    vi.spyOn(globalThis, "fetch")
+      // depth=1 fetch for parent
+      .mockResolvedValueOnce(mockNodesResponse({ "1:0": parent }))
+      // batch 1: A, B (batchSize=2)
+      .mockResolvedValueOnce(mockNodesResponse({ "1:1": childA, "1:2": childB }))
+      // batch 2: C
+      .mockResolvedValueOnce(mockNodesResponse({ "1:3": childC }));
+
+    const result = await fetchNodesChunked("token", "fileKey", ["1:0"], undefined, 2);
+
+    expect(result["1:0"]).toBeDefined();
+    expect(result["1:0"].children).toHaveLength(3);
+    expect(result["1:0"].children![0].name).toBe("A");
+    expect(result["1:0"].children![2].name).toBe("C");
+  });
+
+  it("fetches node directly when it has no children", async () => {
+    const leaf: FigmaNode = { id: "2:0", name: "Leaf", type: "TEXT" };
+    const fullLeaf: FigmaNode = { id: "2:0", name: "Leaf", type: "TEXT", characters: "Hello" };
+
+    vi.spyOn(globalThis, "fetch")
+      // depth=1 fetch
+      .mockResolvedValueOnce(mockNodesResponse({ "2:0": leaf }))
+      // full depth fetch
+      .mockResolvedValueOnce(mockNodesResponse({ "2:0": fullLeaf }));
+
+    const result = await fetchNodesChunked("token", "fileKey", ["2:0"]);
+
+    expect(result["2:0"].name).toBe("Leaf");
+    expect((result["2:0"] as Record<string, unknown>).characters).toBe("Hello");
   });
 });
