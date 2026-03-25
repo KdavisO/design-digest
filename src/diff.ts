@@ -46,7 +46,7 @@ import type { Config } from "./config.js";
 async function processFile(
   config: Config,
   fileKey: string,
-): Promise<{ fileKey: string; changes: ChangeEntry[]; editors: FigmaUser[] }> {
+): Promise<{ fileKey: string; changes: ChangeEntry[]; editors: FigmaUser[]; baselineCreated: boolean }> {
   // Load previous snapshot
   const previous = await loadSnapshot(config.snapshotDir, fileKey);
 
@@ -65,7 +65,7 @@ async function processFile(
       latestVersionId = versionCheck.latestVersionId;
       if (!versionCheck.changed) {
         console.log("  No version change detected — skipping snapshot comparison.");
-        return { fileKey, changes: [], editors: [] };
+        return { fileKey, changes: [], editors: [], baselineCreated: false };
       }
       console.log("  Version changed — fetching current state.");
     } catch (err) {
@@ -164,7 +164,7 @@ async function processFile(
 
   if (!previous) {
     console.log("  No previous snapshot found. First run — baseline saved.");
-    return { fileKey, changes: [], editors: [] };
+    return { fileKey, changes: [], editors: [], baselineCreated: true };
   }
 
   // Detect changes
@@ -188,14 +188,14 @@ async function processFile(
 
   console.log(report.summary);
 
-  return { fileKey, changes, editors };
+  return { fileKey, changes, editors, baselineCreated: false };
 }
 
 async function main(): Promise<void> {
   console.log("DesignDigest: Starting diff check...");
 
   const config = loadConfig();
-  const allChanges: { fileKey: string; changes: ChangeEntry[]; editors: FigmaUser[] }[] = [];
+  const allChanges: { fileKey: string; changes: ChangeEntry[]; editors: FigmaUser[]; baselineCreated: boolean }[] = [];
 
   for (const fileKey of config.figmaFileKeys) {
     console.log(
@@ -208,10 +208,13 @@ async function main(): Promise<void> {
   const totalChanges = allChanges.flatMap((r) => r.changes);
 
   if (totalChanges.length === 0) {
+    const isBaseline = allChanges.some((r) => r.baselineCreated);
     console.log("\nNo changes detected across all files.");
 
-    // Send "no changes" Slack notification
-    if (!config.dryRun && config.slackWebhookUrl) {
+    // Send "no changes" Slack notification (skip on baseline creation)
+    if (isBaseline) {
+      console.log("Baseline created — skipping Slack notification.");
+    } else if (!config.dryRun && config.slackWebhookUrl) {
       try {
         await sendSlackNotification(config.slackWebhookUrl, {
           text: "DesignDigest: No changes detected across all monitored files.",
@@ -220,6 +223,10 @@ async function main(): Promise<void> {
       } catch (err) {
         console.warn("Failed to send Slack notification:", err);
       }
+    } else if (config.dryRun) {
+      console.log("Dry run mode — skipping Slack notification.");
+    } else if (!config.slackWebhookUrl) {
+      console.log("No SLACK_WEBHOOK_URL configured — skipping notification.");
     }
 
     console.log("Done.");
