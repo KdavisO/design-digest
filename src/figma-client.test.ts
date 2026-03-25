@@ -1,5 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { sanitizeNode, filterWatchTargets, extractEditorsSince, checkVersionChanged, fetchNodesChunked } from "./figma-client.js";
+import {
+  sanitizeNode,
+  filterWatchTargets,
+  extractEditorsSince,
+  checkVersionChanged,
+  fetchNodesChunked,
+} from "./figma-client.js";
 import type { FigmaNode, FigmaFile, FigmaVersion } from "./figma-client.js";
 
 describe("sanitizeNode", () => {

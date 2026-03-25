@@ -468,11 +468,11 @@ async function main(): Promise<void> {
 }
 
 function isPayloadTooLargeError(err: unknown): boolean {
-  const message = err instanceof Error ? err.message : String(err);
+  const message = (err instanceof Error ? err.message : String(err)).toLowerCase();
   return (
-    message.includes("Request too large") ||
+    message.includes("request too large") ||
     message.includes("try a smaller request") ||
-    message.includes("Invalid string length")
+    message.includes("invalid string length")
   );
 }
 
