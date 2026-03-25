@@ -505,35 +505,46 @@ function isPayloadTooLargeError(err: unknown): boolean {
 main().catch(async (err) => {
   console.error("DesignDigest failed:", err);
 
-  // Send error notification to Slack
+  // Send error notification to Slack (skip in dry-run for consistency)
   const webhookUrl = process.env.SLACK_WEBHOOK_URL;
-  if (webhookUrl) {
+  const isDryRun = process.env.DRY_RUN === "1" || process.env.DRY_RUN === "true";
+  if (webhookUrl && !isDryRun) {
     try {
-      const errorMessage = err instanceof Error ? err.message : String(err);
-      const stackTrace = err instanceof Error && err.stack
+      const MAX_TEXT_LENGTH = 2900;
+      const rawMessage = err instanceof Error ? err.message : String(err);
+      const errorMessage = rawMessage.slice(0, MAX_TEXT_LENGTH);
+      const rawStack = err instanceof Error && err.stack
         ? err.stack.split("\n").slice(0, 5).join("\n")
         : "";
+      const stackTrace = rawStack.slice(0, MAX_TEXT_LENGTH);
 
-      await sendSlackNotification(webhookUrl, {
-        text: `⚠️ DesignDigest failed: ${errorMessage}`,
-        blocks: [
-          {
-            type: "header",
-            text: { type: "plain_text", text: "⚠️ DesignDigest Error", emoji: true },
-          },
-          {
-            type: "section",
-            text: { type: "mrkdwn", text: `*Error:*\n\`\`\`${errorMessage}\`\`\`` },
-          },
-          ...(stackTrace
-            ? [{
-                type: "section" as const,
-                text: { type: "mrkdwn" as const, text: `*Stack trace:*\n\`\`\`${stackTrace}\`\`\`` },
-              }]
-            : []),
-        ],
-      });
-      console.log("Error notification sent to Slack.");
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 10_000);
+
+      try {
+        await sendSlackNotification(webhookUrl, {
+          text: `⚠️ DesignDigest failed: ${errorMessage}`,
+          blocks: [
+            {
+              type: "header",
+              text: { type: "plain_text", text: "⚠️ DesignDigest Error", emoji: true },
+            },
+            {
+              type: "section",
+              text: { type: "mrkdwn", text: `*Error:*\n\`\`\`${errorMessage}\`\`\`` },
+            },
+            ...(stackTrace
+              ? [{
+                  type: "section",
+                  text: { type: "mrkdwn", text: `*Stack trace:*\n\`\`\`${stackTrace}\`\`\`` },
+                }]
+              : []),
+          ],
+        }, controller.signal);
+        console.log("Error notification sent to Slack.");
+      } finally {
+        clearTimeout(timeout);
+      }
     } catch (notifyErr) {
       console.error("Failed to send error notification to Slack:", notifyErr);
     }

@@ -8,11 +8,13 @@ export interface SlackPayload {
 export async function sendSlackNotification(
   webhookUrl: string,
   payload: SlackPayload,
+  signal?: AbortSignal,
 ): Promise<void> {
   const response = await fetch(webhookUrl, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
+    signal,
   });
 
   if (!response.ok) {
