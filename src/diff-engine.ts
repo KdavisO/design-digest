@@ -377,6 +377,7 @@ export function formatSlackBlocks(
   fileKey: string,
   changes: ChangeEntry[],
   editors?: FigmaUser[],
+  pageSummaries?: Map<string, string>,
 ): SlackBlock[] {
   if (changes.length === 0) return [];
 
@@ -475,6 +476,21 @@ export function formatSlackBlocks(
       });
     }
 
+    // Per-page AI summary (inserted right after the page's changes)
+    const aiPageSummary = pageSummaries?.get(pageName);
+    if (aiPageSummary) {
+      const SUMMARY_PREFIX = "💡 ";
+      const slackSummary = convertMarkdownToSlackMrkdwn(aiPageSummary);
+      // Reserve space for the prefix to stay within Slack's 3000-char block limit
+      const summaryChunks = chunkLines(slackSummary.split("\n"), 3000 - SUMMARY_PREFIX.length);
+      for (const chunk of summaryChunks) {
+        blocks.push({
+          type: "section",
+          text: { type: "mrkdwn", text: `${SUMMARY_PREFIX}${chunk}` },
+        });
+      }
+    }
+
     // Add divider between pages, but not after the last page
     if (i < pageEntries.length - 1) {
       blocks.push({ type: "divider" });
@@ -555,7 +571,7 @@ function diffPath(d: Diff<unknown, unknown>): string {
   return d.path?.[0]?.toString() ?? "";
 }
 
-function groupByPage(changes: ChangeEntry[]): Record<string, ChangeEntry[]> {
+export function groupByPage(changes: ChangeEntry[]): Record<string, ChangeEntry[]> {
   const grouped: Record<string, ChangeEntry[]> = {};
   for (const change of changes) {
     (grouped[change.pageName] ??= []).push(change);

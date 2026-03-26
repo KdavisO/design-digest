@@ -17,10 +17,10 @@ import {
   buildReport,
   formatSlackBlocks,
   formatSlackReport,
-  chunkLines,
+  groupByPage,
   convertMarkdownToSlackMrkdwn,
 } from "./diff-engine.js";
-import { generateSummary } from "./claude-summary.js";
+import { generatePageSummaries } from "./claude-summary.js";
 import { sendSlackNotification } from "./notify.js";
 import {
   fetchOpenIssues,
@@ -250,18 +250,37 @@ async function main(): Promise<void> {
     return;
   }
 
-  // Optional: AI summary
-  let aiSummary: string | undefined;
-  let slackSummary: string | undefined;
-  if (config.claudeSummaryEnabled && config.anthropicApiKey) {
-    console.log("\nGenerating AI summary...");
-    try {
-      aiSummary = await generateSummary(config.anthropicApiKey, totalChanges);
-      slackSummary = convertMarkdownToSlackMrkdwn(aiSummary);
-      console.log("\n--- AI Summary ---");
-      console.log(aiSummary);
-    } catch (err) {
-      console.warn("AI summary generation failed:", err);
+  // Generate per-page AI summaries only when API key is available and at least
+  // one integration will actually use them (checking required config, not just flags)
+  const slackNeedsSummaries =
+    config.claudeSummaryEnabled && !!config.slackWebhookUrl && !config.dryRun;
+  const githubNeedsSummaries =
+    config.githubIssueEnabled && !!config.githubIssueToken && !!config.githubIssueRepo && !config.dryRun;
+  const backlogNeedsSummaries =
+    config.backlogEnabled && !!config.backlogApiKey && !!config.backlogSpaceId && !!config.backlogProjectId && !config.dryRun;
+  const needsSummaries: boolean =
+    !!config.anthropicApiKey &&
+    (slackNeedsSummaries || githubNeedsSummaries || backlogNeedsSummaries);
+  const perFileSummaries = new Map<string, Map<string, string>>();
+  if (needsSummaries) {
+    const anthropicApiKey = config.anthropicApiKey!;
+    console.log("\nGenerating AI summaries (per page)...");
+    for (const { fileKey, changes } of allChanges) {
+      if (!changes.length) continue;
+      try {
+        const changesByPage = groupByPage(changes);
+        const { summaries, failedPages } = await generatePageSummaries(anthropicApiKey, changesByPage);
+        perFileSummaries.set(fileKey, summaries);
+        for (const [pageName, summary] of summaries) {
+          console.log(`\n--- AI Summary: ${fileKey} / ${pageName} ---`);
+          console.log(summary);
+        }
+        if (failedPages.length > 0) {
+          console.warn(`  Failed to generate summaries for ${fileKey}: ${failedPages.join(", ")}`);
+        }
+      } catch (err) {
+        console.warn(`AI summary generation failed for ${fileKey}:`, err);
+      }
     }
   }
 
@@ -272,27 +291,14 @@ async function main(): Promise<void> {
     // Build Block Kit blocks for all files, inserting dividers between file reports
     const MAX_BLOCKS = 50;
     const fileResults = allChanges.filter((r) => r.changes.length > 0);
+    // Only include AI summaries in Slack when configured
+    const slackSummaries = slackNeedsSummaries ? perFileSummaries : undefined;
     let blocks = fileResults.flatMap((r, i) => {
-      const fileBlocks = formatSlackBlocks(r.fileKey, r.changes, r.editors);
+      const fileBlocks = formatSlackBlocks(r.fileKey, r.changes, r.editors, slackSummaries?.get(r.fileKey));
       return i < fileResults.length - 1
         ? [...fileBlocks, { type: "divider" as const }]
         : fileBlocks;
     });
-
-    if (slackSummary) {
-      blocks.push({ type: "divider" });
-      blocks.push({
-        type: "section",
-        text: { type: "mrkdwn", text: "*AI Summary:*" },
-      });
-      const summaryChunks = chunkLines(slackSummary.split("\n"), 3000);
-      for (const chunk of summaryChunks) {
-        blocks.push({
-          type: "section",
-          text: { type: "mrkdwn", text: chunk },
-        });
-      }
-    }
 
     // Slack limits messages to 50 blocks — truncate with a note if exceeded
     if (blocks.length > MAX_BLOCKS) {
@@ -304,13 +310,21 @@ async function main(): Promise<void> {
     }
 
     // Plain text fallback for notifications/emails
-    let fallbackText = allChanges
+    const fallbackText = allChanges
       .filter((r) => r.changes.length > 0)
-      .map((r) => formatSlackReport(r.fileKey, r.changes, r.editors))
+      .map((r) => {
+        const baseReport = formatSlackReport(r.fileKey, r.changes, r.editors);
+        const fileSummaries = slackSummaries?.get(r.fileKey);
+        if (!fileSummaries || fileSummaries.size === 0) return baseReport;
+        const summaryLines = [...fileSummaries.entries()]
+          .map(([pageName, summary]) => {
+            const mrkdwn = convertMarkdownToSlackMrkdwn(summary);
+            return `💡 ${pageName}:\n${mrkdwn}`;
+          })
+          .join("\n");
+        return `${baseReport}\n\n${summaryLines}`;
+      })
       .join("\n---\n");
-    if (slackSummary) {
-      fallbackText += `\n---\n*AI Summary:*\n${slackSummary}`;
-    }
 
     await sendSlackNotification(config.slackWebhookUrl, {
       text: fallbackText,
@@ -323,19 +337,14 @@ async function main(): Promise<void> {
     console.log("\nNo SLACK_WEBHOOK_URL configured — skipping notification.");
   }
 
-  // Memoize per-file AI summaries to avoid duplicate Claude API calls
-  // Caches both successes and failures so each fileKey is attempted at most once
-  const perFileSummaryCache = new Map<string, Promise<string | undefined>>();
-  function getPerFileSummary(
-    apiKey: string,
-    fileKey: string,
-    changes: ChangeEntry[],
-  ): Promise<string | undefined> {
-    const cached = perFileSummaryCache.get(fileKey);
-    if (cached !== undefined) return cached;
-    const promise = generateSummary(apiKey, changes).catch(() => undefined);
-    perFileSummaryCache.set(fileKey, promise);
-    return promise;
+  // Reuse per-page summaries for issue bodies instead of making additional API calls.
+  // Joins page summaries into a single per-file summary text.
+  function getPerFileSummary(fileKey: string): string | undefined {
+    const fileSummaries = perFileSummaries.get(fileKey);
+    if (!fileSummaries || fileSummaries.size === 0) return undefined;
+    return [...fileSummaries.entries()]
+      .map(([pageName, summary]) => `### ${pageName}\n${summary}`)
+      .join("\n\n");
   }
 
   // Create GitHub Issues
@@ -395,10 +404,8 @@ async function main(): Promise<void> {
           title = githubDefaultTitle(result.changes);
         }
 
-        // Generate per-file AI summary (memoized)
-        const perFileSummary = config.anthropicApiKey
-          ? await getPerFileSummary(config.anthropicApiKey, result.fileKey, result.changes)
-          : undefined;
+        // Reuse per-page summaries as per-file summary for issue body
+        const perFileSummary = getPerFileSummary(result.fileKey);
 
         const body = formatGitHubIssueBody(
           result.fileKey,
@@ -478,10 +485,8 @@ async function main(): Promise<void> {
           title = defaultTitle(result.changes);
         }
 
-        // Generate per-file AI summary (memoized, shared with GitHub Issue)
-        const perFileSummary = config.anthropicApiKey
-          ? await getPerFileSummary(config.anthropicApiKey, result.fileKey, result.changes)
-          : undefined;
+        // Reuse per-page summaries as per-file summary for issue body
+        const perFileSummary = getPerFileSummary(result.fileKey);
 
         const description = formatBacklogDescription(
           result.fileKey,

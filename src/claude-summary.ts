@@ -1,5 +1,50 @@
 import type { ChangeEntry } from "./diff-engine.js";
 
+export interface PageSummaryResult {
+  summaries: Map<string, string>;
+  failedPages: string[];
+}
+
+/**
+ * Generate AI summaries per page. Returns summaries and failed page names.
+ * Each page's summary is generated independently; failures are isolated.
+ * Throws when all pages fail. Caller is responsible for logging failures with context.
+ */
+export async function generatePageSummaries(
+  apiKey: string,
+  changesByPage: Record<string, ChangeEntry[]>,
+  generate: (apiKey: string, changes: ChangeEntry[]) => Promise<string> = generateSummary,
+): Promise<PageSummaryResult> {
+  const summaries = new Map<string, string>();
+  const entries = Object.entries(changesByPage);
+
+  const settled = await Promise.allSettled(
+    entries.map(async ([pageName, pageChanges]) => {
+      const summary = await generate(apiKey, pageChanges);
+      return { pageName, summary };
+    }),
+  );
+
+  const failedPages: string[] = [];
+
+  for (let i = 0; i < settled.length; i++) {
+    const result = settled[i];
+    if (result.status === "fulfilled") {
+      summaries.set(result.value.pageName, result.value.summary);
+    } else {
+      failedPages.push(entries[i][0]);
+    }
+  }
+
+  if (failedPages.length === entries.length && entries.length > 0) {
+    throw new Error(
+      `Failed to generate summaries for all pages: ${failedPages.join(", ")}`,
+    );
+  }
+
+  return { summaries, failedPages };
+}
+
 export async function generateSummary(
   apiKey: string,
   changes: ChangeEntry[],
