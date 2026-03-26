@@ -1,5 +1,34 @@
 import type { ChangeEntry } from "./diff-engine.js";
 
+/**
+ * Generate AI summaries per page. Returns a Map of pageName → summary.
+ * Each page's summary is generated independently; failures are isolated.
+ */
+export async function generatePageSummaries(
+  apiKey: string,
+  changesByPage: Record<string, ChangeEntry[]>,
+  generate: (apiKey: string, changes: ChangeEntry[]) => Promise<string> = generateSummary,
+): Promise<Map<string, string>> {
+  const results = new Map<string, string>();
+  const entries = Object.entries(changesByPage);
+
+  const settled = await Promise.allSettled(
+    entries.map(async ([pageName, pageChanges]) => {
+      const summary = await generate(apiKey, pageChanges);
+      return { pageName, summary };
+    }),
+  );
+
+  for (const result of settled) {
+    if (result.status === "fulfilled") {
+      results.set(result.value.pageName, result.value.summary);
+    }
+    // Failures are silently skipped — the page just won't have a summary
+  }
+
+  return results;
+}
+
 export async function generateSummary(
   apiKey: string,
   changes: ChangeEntry[],

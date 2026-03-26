@@ -953,3 +953,57 @@ describe("editors in reports", () => {
     expect(editorsBlock).toBeUndefined();
   });
 });
+
+describe("formatSlackBlocks with pageSummaries", () => {
+  it("inserts per-page AI summary after each page's changes", () => {
+    const changes = [
+      { pageName: "Home", nodeId: "1:1", nodeName: "Button", nodeType: "FRAME", kind: "added" as const },
+      { pageName: "Settings", nodeId: "2:1", nodeName: "Toggle", nodeType: "FRAME", kind: "added" as const },
+    ];
+    const pageSummaries = new Map([
+      ["Home", "Home page got a new button."],
+      ["Settings", "Settings page got a toggle."],
+    ]);
+
+    const blocks = formatSlackBlocks("abc123", changes, undefined, pageSummaries);
+
+    // Find summary blocks by the 💡 prefix
+    const summaryBlocks = blocks.filter(
+      (b) => b.type === "section" && b.text?.text?.startsWith("💡"),
+    );
+    expect(summaryBlocks).toHaveLength(2);
+    expect(summaryBlocks[0].text!.text).toContain("Home page got a new button.");
+    expect(summaryBlocks[1].text!.text).toContain("Settings page got a toggle.");
+  });
+
+  it("skips summary for pages without a generated summary", () => {
+    const changes = [
+      { pageName: "Home", nodeId: "1:1", nodeName: "Button", nodeType: "FRAME", kind: "added" as const },
+      { pageName: "Settings", nodeId: "2:1", nodeName: "Toggle", nodeType: "FRAME", kind: "added" as const },
+    ];
+    const pageSummaries = new Map([
+      ["Home", "Home page summary."],
+      // Settings is missing — simulates a generation failure
+    ]);
+
+    const blocks = formatSlackBlocks("abc123", changes, undefined, pageSummaries);
+
+    const summaryBlocks = blocks.filter(
+      (b) => b.type === "section" && b.text?.text?.startsWith("💡"),
+    );
+    expect(summaryBlocks).toHaveLength(1);
+    expect(summaryBlocks[0].text!.text).toContain("Home page summary.");
+  });
+
+  it("works without pageSummaries (undefined)", () => {
+    const changes = [
+      { pageName: "Home", nodeId: "1:1", nodeName: "Button", nodeType: "FRAME", kind: "added" as const },
+    ];
+
+    const blocks = formatSlackBlocks("abc123", changes);
+    const summaryBlocks = blocks.filter(
+      (b) => b.type === "section" && b.text?.text?.startsWith("💡"),
+    );
+    expect(summaryBlocks).toHaveLength(0);
+  });
+});

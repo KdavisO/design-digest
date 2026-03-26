@@ -17,10 +17,9 @@ import {
   buildReport,
   formatSlackBlocks,
   formatSlackReport,
-  chunkLines,
-  convertMarkdownToSlackMrkdwn,
+  groupByPage,
 } from "./diff-engine.js";
-import { generateSummary } from "./claude-summary.js";
+import { generateSummary, generatePageSummaries } from "./claude-summary.js";
 import { sendSlackNotification } from "./notify.js";
 import {
   fetchOpenIssues,
@@ -250,16 +249,17 @@ async function main(): Promise<void> {
     return;
   }
 
-  // Optional: AI summary
-  let aiSummary: string | undefined;
-  let slackSummary: string | undefined;
+  // Optional: AI summary (per-page)
+  let pageSummariesMap: Map<string, string> | undefined;
   if (config.claudeSummaryEnabled && config.anthropicApiKey) {
-    console.log("\nGenerating AI summary...");
+    console.log("\nGenerating AI summaries (per page)...");
     try {
-      aiSummary = await generateSummary(config.anthropicApiKey, totalChanges);
-      slackSummary = convertMarkdownToSlackMrkdwn(aiSummary);
-      console.log("\n--- AI Summary ---");
-      console.log(aiSummary);
+      const changesByPage = groupByPage(totalChanges);
+      pageSummariesMap = await generatePageSummaries(config.anthropicApiKey, changesByPage);
+      for (const [pageName, summary] of pageSummariesMap) {
+        console.log(`\n--- AI Summary: ${pageName} ---`);
+        console.log(summary);
+      }
     } catch (err) {
       console.warn("AI summary generation failed:", err);
     }
@@ -273,26 +273,11 @@ async function main(): Promise<void> {
     const MAX_BLOCKS = 50;
     const fileResults = allChanges.filter((r) => r.changes.length > 0);
     let blocks = fileResults.flatMap((r, i) => {
-      const fileBlocks = formatSlackBlocks(r.fileKey, r.changes, r.editors);
+      const fileBlocks = formatSlackBlocks(r.fileKey, r.changes, r.editors, pageSummariesMap);
       return i < fileResults.length - 1
         ? [...fileBlocks, { type: "divider" as const }]
         : fileBlocks;
     });
-
-    if (slackSummary) {
-      blocks.push({ type: "divider" });
-      blocks.push({
-        type: "section",
-        text: { type: "mrkdwn", text: "*AI Summary:*" },
-      });
-      const summaryChunks = chunkLines(slackSummary.split("\n"), 3000);
-      for (const chunk of summaryChunks) {
-        blocks.push({
-          type: "section",
-          text: { type: "mrkdwn", text: chunk },
-        });
-      }
-    }
 
     // Slack limits messages to 50 blocks — truncate with a note if exceeded
     if (blocks.length > MAX_BLOCKS) {
@@ -304,13 +289,10 @@ async function main(): Promise<void> {
     }
 
     // Plain text fallback for notifications/emails
-    let fallbackText = allChanges
+    const fallbackText = allChanges
       .filter((r) => r.changes.length > 0)
       .map((r) => formatSlackReport(r.fileKey, r.changes, r.editors))
       .join("\n---\n");
-    if (slackSummary) {
-      fallbackText += `\n---\n*AI Summary:*\n${slackSummary}`;
-    }
 
     await sendSlackNotification(config.slackWebhookUrl, {
       text: fallbackText,
