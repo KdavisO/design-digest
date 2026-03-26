@@ -317,7 +317,10 @@ async function main(): Promise<void> {
         const fileSummaries = slackSummaries?.get(r.fileKey);
         if (!fileSummaries || fileSummaries.size === 0) return baseReport;
         const summaryLines = [...fileSummaries.entries()]
-          .map(([pageName, summary]) => `💡 ${pageName}: ${convertMarkdownToSlackMrkdwn(summary)}`)
+          .map(([pageName, summary]) => {
+            const mrkdwn = convertMarkdownToSlackMrkdwn(summary);
+            return `💡 ${pageName}:\n${mrkdwn}`;
+          })
           .join("\n");
         return `${baseReport}\n\n${summaryLines}`;
       })
