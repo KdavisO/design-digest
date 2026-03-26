@@ -389,7 +389,7 @@ export function formatSlackBlocks(
     type: "header",
     text: {
       type: "plain_text",
-      text: `DesignDigest: ${changes.length} change(s) detected`,
+      text: `${changes.length} change(s) detected`,
       emoji: true,
     },
   });
