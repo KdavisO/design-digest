@@ -549,11 +549,11 @@ main().catch(async (err) => {
 
       try {
         await sendSlackNotification(webhookUrl, {
-          text: `⚠️ DesignDigest failed: ${errorMessage}`,
+          text: `⚠️ Failed: ${errorMessage}`,
           blocks: [
             {
               type: "header",
-              text: { type: "plain_text", text: "⚠️ DesignDigest Error", emoji: true },
+              text: { type: "plain_text", text: "⚠️ Error", emoji: true },
             },
             {
               type: "section",
