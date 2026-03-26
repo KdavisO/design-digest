@@ -80,9 +80,11 @@ async function processFile(
   }
 
   // Step 2: Fetch current state from Figma using proactive chunking
-  // Proactive strategy: fetch at depth=1 first, estimate complexity per page/node,
+  // Proactive strategy: always fetch at depth=1 first, estimate complexity per page/node,
   // and chunk large subtrees before hitting payload limits.
-  // This avoids the error-then-retry pattern and saves 1 API call per large file.
+  // For large files, this avoids the error-then-retry pattern and typically saves ~1 API call
+  // compared to the previous approach. For small/simple files, this proactively adds +1 API call
+  // (e.g. 2 calls instead of 1), which is an intentional rate-limit / cost tradeoff.
   let pages: Record<string, FigmaNode>;
 
   if (config.figmaWatchNodeIds.length > 0) {

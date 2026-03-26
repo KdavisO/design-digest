@@ -5,7 +5,6 @@ import {
   extractEditorsSince,
   checkVersionChanged,
   fetchNodesChunked,
-  countShallowChildren,
   adaptiveBatchSize,
   fetchFileProactive,
   fetchNodesProactive,
@@ -319,28 +318,6 @@ describe("fetchNodesChunked", () => {
     // Only 1 fetch call (discovery), children from shallow result used directly
     expect(fetchSpy).toHaveBeenCalledTimes(1);
     expect(result["1:0"].children).toHaveLength(1);
-  });
-});
-
-describe("countShallowChildren", () => {
-  it("counts children across multiple nodes", () => {
-    const nodes: FigmaNode[] = [
-      { id: "1:0", name: "A", type: "CANVAS", children: [
-        { id: "1:1", name: "C1", type: "FRAME" },
-        { id: "1:2", name: "C2", type: "FRAME" },
-      ]},
-      { id: "2:0", name: "B", type: "CANVAS", children: [
-        { id: "2:1", name: "C3", type: "FRAME" },
-      ]},
-    ];
-    expect(countShallowChildren(nodes)).toBe(3);
-  });
-
-  it("returns 0 for nodes without children", () => {
-    const nodes: FigmaNode[] = [
-      { id: "1:0", name: "Leaf", type: "TEXT" },
-    ];
-    expect(countShallowChildren(nodes)).toBe(0);
   });
 });
 

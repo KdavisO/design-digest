@@ -51,8 +51,8 @@ export function loadConfig(): Config {
     backlogIssueTypeId: process.env.BACKLOG_ISSUE_TYPE_ID || undefined,
     backlogPriorityId: process.env.BACKLOG_PRIORITY_ID || undefined,
     backlogAssigneeId: process.env.BACKLOG_ASSIGNEE_ID || undefined,
-    figmaNodeDepth: parsePositiveInt(process.env.FIGMA_NODE_DEPTH),
-    figmaBatchSize: parsePositiveInt(process.env.FIGMA_BATCH_SIZE) ?? 5,
+    figmaNodeDepth: parsePositiveInt(process.env.FIGMA_NODE_DEPTH, "FIGMA_NODE_DEPTH"),
+    figmaBatchSize: parsePositiveInt(process.env.FIGMA_BATCH_SIZE, "FIGMA_BATCH_SIZE") ?? 5,
     snapshotDir: process.env.SNAPSHOT_DIR || "./snapshots",
     dryRun: process.env.DRY_RUN === "true",
   };
@@ -66,17 +66,17 @@ function env(key: string): string {
   return value;
 }
 
-function parsePositiveInt(value: string | undefined): number | undefined {
+function parsePositiveInt(value: string | undefined, envName = "value"): number | undefined {
   if (!value) return undefined;
   if (!/^\d+$/.test(value)) {
     throw new Error(
-      `Invalid FIGMA_NODE_DEPTH: "${value}" (must be a positive integer)`,
+      `Invalid ${envName}: "${value}" (must be a positive integer)`,
     );
   }
   const n = parseInt(value, 10);
   if (n < 1) {
     throw new Error(
-      `Invalid FIGMA_NODE_DEPTH: "${value}" (must be a positive integer)`,
+      `Invalid ${envName}: "${value}" (must be a positive integer)`,
     );
   }
   return n;

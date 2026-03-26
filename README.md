@@ -124,7 +124,7 @@ For large Figma files that exceed API payload limits, DesignDigest automatically
 
 1. **Version check first** — skips snapshot comparison entirely if the file hasn't changed (1 API call)
 2. **Proactive chunking** — fetches at depth=1 first, estimates complexity per page, and chunks large subtrees (>50 children) before hitting payload limits. This avoids the error-then-retry pattern and saves API calls.
-3. **Adaptive batch sizing** — automatically reduces batch size for pages with many children (e.g., 3 for 50-200 children, 2 for 200+)
+3. **Adaptive batch sizing** — automatically reduces batch size for pages with many children (e.g., 3 for 51-200 children, 2 for 201+)
 4. **Error fallback** — if proactive estimation misses a case, still falls back to chunked fetch on payload errors
 5. **Depth limiting** — set `FIGMA_NODE_DEPTH` to limit how deep the node tree is fetched
 

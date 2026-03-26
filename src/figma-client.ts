@@ -78,14 +78,6 @@ export async function fetchNodes(
 }
 
 /**
- * Count total descendant nodes at depth=1 to estimate file complexity.
- * Used for proactive chunking decisions before hitting payload limits.
- */
-export function countShallowChildren(nodes: FigmaNode[]): number {
-  return nodes.reduce((sum, node) => sum + (node.children?.length ?? 0), 0);
-}
-
-/**
  * Calculate an adaptive batch size based on the number of child nodes.
  * Larger child counts get smaller batch sizes to avoid payload limits.
  */
@@ -203,25 +195,36 @@ export async function fetchFileProactive(
     }
   }
 
-  // Step 4: Fetch large pages via chunked fetch
-  for (const page of largePages) {
-    const childCount = page.children?.length ?? 0;
-    const effectiveBatch = adaptiveBatchSize(childCount, batchSize);
-    console.log(
-      `  Proactive chunked fetch: ${page.name} (${childCount} children, batch size ${effectiveBatch})`,
-    );
-    chunkedPages.push(page.name);
+  // Step 4: Fetch large pages via single batched chunked fetch
+  if (largePages.length > 0) {
+    const perPageBatches = largePages.map((page) => {
+      const childCount = page.children?.length ?? 0;
+      return adaptiveBatchSize(childCount, batchSize);
+    });
+    const globalEffectiveBatch = Math.min(...perPageBatches);
 
+    for (const page of largePages) {
+      const childCount = page.children?.length ?? 0;
+      const effectiveBatch = adaptiveBatchSize(childCount, batchSize);
+      console.log(
+        `  Proactive chunked fetch: ${page.name} (${childCount} children, batch size ${effectiveBatch})`,
+      );
+      chunkedPages.push(page.name);
+    }
+
+    const largePageIds = largePages.map((p) => p.id);
     const chunkedNodes = await fetchNodesChunked(
       token,
       fileKey,
-      [page.id],
+      largePageIds,
       depth,
-      effectiveBatch,
+      globalEffectiveBatch,
     );
-    const node = chunkedNodes[page.id];
-    if (node) {
-      pages[node.name || page.id] = node;
+    for (const page of largePages) {
+      const node = chunkedNodes[page.id];
+      if (node) {
+        pages[node.name || page.id] = node;
+      }
     }
   }
 
@@ -273,25 +276,52 @@ export async function fetchNodesProactive(
     }
   }
 
-  // Step 3: Fetch large nodes via chunked fetch
-  for (const nodeId of largeNodeIds) {
-    const node = shallowNodes[nodeId];
-    const childCount = node?.children?.length ?? 0;
-    const effectiveBatch = adaptiveBatchSize(childCount, batchSize);
-    console.log(
-      `  Proactive chunked fetch: ${node?.name ?? nodeId} (${childCount} children, batch size ${effectiveBatch})`,
-    );
-    chunkedNodeNames.push(node?.name ?? nodeId);
+  // Step 3: Fetch large nodes
+  if (largeNodeIds.length > 0) {
+    // For depth=1, reuse shallow nodes directly (no extra API calls)
+    if (depth === 1) {
+      for (const nodeId of largeNodeIds) {
+        const node = shallowNodes[nodeId];
+        const childCount = node?.children?.length ?? 0;
+        const effectiveBatch = adaptiveBatchSize(childCount, batchSize);
+        console.log(
+          `  Proactive chunked fetch: ${node?.name ?? nodeId} (${childCount} children, batch size ${effectiveBatch})`,
+        );
+        chunkedNodeNames.push(node?.name ?? nodeId);
+        if (node) {
+          result[nodeId] = node;
+        }
+      }
+    } else {
+      // Batch all large nodes into a single fetchNodesChunked call
+      const perNodeBatches = largeNodeIds.map((nodeId) => {
+        const childCount = shallowNodes[nodeId]?.children?.length ?? 0;
+        return adaptiveBatchSize(childCount, batchSize);
+      });
+      const globalEffectiveBatch = Math.min(...perNodeBatches);
 
-    const chunkedNodes = await fetchNodesChunked(
-      token,
-      fileKey,
-      [nodeId],
-      depth,
-      effectiveBatch,
-    );
-    if (chunkedNodes[nodeId]) {
-      result[nodeId] = chunkedNodes[nodeId];
+      for (const nodeId of largeNodeIds) {
+        const node = shallowNodes[nodeId];
+        const childCount = node?.children?.length ?? 0;
+        const effectiveBatch = adaptiveBatchSize(childCount, batchSize);
+        console.log(
+          `  Proactive chunked fetch: ${node?.name ?? nodeId} (${childCount} children, batch size ${effectiveBatch})`,
+        );
+        chunkedNodeNames.push(node?.name ?? nodeId);
+      }
+
+      const chunkedNodes = await fetchNodesChunked(
+        token,
+        fileKey,
+        largeNodeIds,
+        depth,
+        globalEffectiveBatch,
+      );
+      for (const nodeId of largeNodeIds) {
+        if (chunkedNodes[nodeId]) {
+          result[nodeId] = chunkedNodes[nodeId];
+        }
+      }
     }
   }
 
