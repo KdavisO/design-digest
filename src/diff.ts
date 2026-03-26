@@ -269,11 +269,14 @@ async function main(): Promise<void> {
       if (!changes.length) continue;
       try {
         const changesByPage = groupByPage(changes);
-        const fileSummaries = await generatePageSummaries(anthropicApiKey, changesByPage);
-        perFileSummaries.set(fileKey, fileSummaries);
-        for (const [pageName, summary] of fileSummaries) {
+        const { summaries, failedPages } = await generatePageSummaries(anthropicApiKey, changesByPage);
+        perFileSummaries.set(fileKey, summaries);
+        for (const [pageName, summary] of summaries) {
           console.log(`\n--- AI Summary: ${fileKey} / ${pageName} ---`);
           console.log(summary);
+        }
+        if (failedPages.length > 0) {
+          console.warn(`  Failed to generate summaries for ${fileKey}: ${failedPages.join(", ")}`);
         }
       } catch (err) {
         console.warn(`AI summary generation failed for ${fileKey}:`, err);
@@ -337,7 +340,7 @@ async function main(): Promise<void> {
     const fileSummaries = perFileSummaries.get(fileKey);
     if (!fileSummaries || fileSummaries.size === 0) return undefined;
     return [...fileSummaries.entries()]
-      .map(([pageName, summary]) => `## ${pageName}\n${summary}`)
+      .map(([pageName, summary]) => `### ${pageName}\n${summary}`)
       .join("\n\n");
   }
 

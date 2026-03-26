@@ -15,16 +15,16 @@ describe("generatePageSummaries", () => {
       ],
     };
 
-    const result = await generatePageSummaries("fake-key", changesByPage, mockGenerate);
-    expect(result.size).toBe(2);
-    expect(result.get("Home")).toBe("Mock summary");
-    expect(result.get("Settings")).toBe("Mock summary");
+    const { summaries, failedPages } = await generatePageSummaries("fake-key", changesByPage, mockGenerate);
+    expect(summaries.size).toBe(2);
+    expect(summaries.get("Home")).toBe("Mock summary");
+    expect(summaries.get("Settings")).toBe("Mock summary");
+    expect(failedPages).toEqual([]);
     expect(mockGenerate).toHaveBeenCalledTimes(2);
   });
 
   it("isolates failures — one page failing does not affect others", async () => {
     let callCount = 0;
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     const mockGenerate = vi.fn().mockImplementation(async () => {
       callCount++;
       if (callCount === 1) {
@@ -42,14 +42,11 @@ describe("generatePageSummaries", () => {
       ],
     };
 
-    const result = await generatePageSummaries("fake-key", changesByPage, mockGenerate);
-    expect(result.size).toBe(1);
-    expect(result.has("FailPage")).toBe(false);
-    expect(result.get("SuccessPage")).toBe("Success summary");
-    expect(warnSpy).toHaveBeenCalledWith(
-      expect.stringContaining("FailPage"),
-    );
-    warnSpy.mockRestore();
+    const { summaries, failedPages } = await generatePageSummaries("fake-key", changesByPage, mockGenerate);
+    expect(summaries.size).toBe(1);
+    expect(summaries.has("FailPage")).toBe(false);
+    expect(summaries.get("SuccessPage")).toBe("Success summary");
+    expect(failedPages).toEqual(["FailPage"]);
   });
 
   it("throws when all pages fail", async () => {
@@ -69,11 +66,12 @@ describe("generatePageSummaries", () => {
     ).rejects.toThrow("Failed to generate summaries for all pages");
   });
 
-  it("returns empty map for empty input", async () => {
+  it("returns empty result for empty input", async () => {
     const mockGenerate = vi.fn();
 
-    const result = await generatePageSummaries("fake-key", {}, mockGenerate);
-    expect(result.size).toBe(0);
+    const { summaries, failedPages } = await generatePageSummaries("fake-key", {}, mockGenerate);
+    expect(summaries.size).toBe(0);
+    expect(failedPages).toEqual([]);
     expect(mockGenerate).not.toHaveBeenCalled();
   });
 });
