@@ -250,15 +250,19 @@ async function main(): Promise<void> {
     return;
   }
 
-  // Optional: AI summary (per-file, per-page)
+  // Generate per-page AI summaries when API key is available and either
+  // Slack summaries or issue integrations are enabled
+  const needsSummaries =
+    config.anthropicApiKey &&
+    (config.claudeSummaryEnabled || config.githubIssueEnabled || config.backlogEnabled);
   const perFileSummaries = new Map<string, Map<string, string>>();
-  if (config.claudeSummaryEnabled && config.anthropicApiKey) {
+  if (needsSummaries) {
     console.log("\nGenerating AI summaries (per page)...");
     for (const { fileKey, changes } of allChanges) {
       if (!changes.length) continue;
       try {
         const changesByPage = groupByPage(changes);
-        const fileSummaries = await generatePageSummaries(config.anthropicApiKey, changesByPage);
+        const fileSummaries = await generatePageSummaries(config.anthropicApiKey!, changesByPage);
         perFileSummaries.set(fileKey, fileSummaries);
         for (const [pageName, summary] of fileSummaries) {
           console.log(`\n--- AI Summary: ${fileKey} / ${pageName} ---`);
@@ -277,8 +281,10 @@ async function main(): Promise<void> {
     // Build Block Kit blocks for all files, inserting dividers between file reports
     const MAX_BLOCKS = 50;
     const fileResults = allChanges.filter((r) => r.changes.length > 0);
+    // Only include AI summaries in Slack when claudeSummaryEnabled is true
+    const slackSummaries = config.claudeSummaryEnabled ? perFileSummaries : undefined;
     let blocks = fileResults.flatMap((r, i) => {
-      const fileBlocks = formatSlackBlocks(r.fileKey, r.changes, r.editors, perFileSummaries.get(r.fileKey));
+      const fileBlocks = formatSlackBlocks(r.fileKey, r.changes, r.editors, slackSummaries?.get(r.fileKey));
       return i < fileResults.length - 1
         ? [...fileBlocks, { type: "divider" as const }]
         : fileBlocks;
@@ -298,7 +304,7 @@ async function main(): Promise<void> {
       .filter((r) => r.changes.length > 0)
       .map((r) => {
         const baseReport = formatSlackReport(r.fileKey, r.changes, r.editors);
-        const fileSummaries = perFileSummaries.get(r.fileKey);
+        const fileSummaries = slackSummaries?.get(r.fileKey);
         if (!fileSummaries || fileSummaries.size === 0) return baseReport;
         const summaryLines = [...fileSummaries.entries()]
           .map(([pageName, summary]) => `💡 ${pageName}: ${convertMarkdownToSlackMrkdwn(summary)}`)
