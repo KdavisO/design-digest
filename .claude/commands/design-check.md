@@ -4,7 +4,7 @@ Figma MCP 経由でデザイン差分検出を実行する。
 
 1. **環境変数を読み込む**: Bash ツールで `.env` ファイルを読み込み、必要な値を取得する
    ```bash
-   [ -f .env ] && set -a && . .env && set +a; if [ -z "${FIGMA_FILE_KEY:-}" ]; then echo "ERROR: FIGMA_FILE_KEY が未設定です。.env を確認するか環境変数を手動で設定してください。" >&2; exit 1; fi && echo "FIGMA_FILE_KEY=$FIGMA_FILE_KEY" && echo "FIGMA_WATCH_NODE_IDS=${FIGMA_WATCH_NODE_IDS:-}"
+   [ -f .env ] && { set -a; if ! . .env; then echo "ERROR: .env の読み込みに失敗しました。ファイルの構文を確認してください。" >&2; set +a; exit 1; fi; set +a; }; if [ -z "${FIGMA_FILE_KEY:-}" ]; then echo "ERROR: FIGMA_FILE_KEY が未設定です。.env を確認するか環境変数を手動で設定してください。" >&2; exit 1; fi && echo "FIGMA_FILE_KEY=$FIGMA_FILE_KEY" && echo "FIGMA_WATCH_NODE_IDS=${FIGMA_WATCH_NODE_IDS:-}"
    ```
    - このコマンドの出力から `FIGMA_FILE_KEY` と `FIGMA_WATCH_NODE_IDS` の値を記憶する
    - `.env` が存在しない場合は環境変数をそのまま利用する（`.env` は必須ではない）
