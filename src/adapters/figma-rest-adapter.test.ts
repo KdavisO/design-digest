@@ -14,10 +14,16 @@ vi.mock("../figma-client.js", () => ({
 import {
   fetchFileProactive,
   fetchNodesProactive,
+  fetchNodesChunked,
+  fetchFile,
+  filterWatchTargets,
 } from "../figma-client.js";
 
 const mockFetchFileProactive = vi.mocked(fetchFileProactive);
 const mockFetchNodesProactive = vi.mocked(fetchNodesProactive);
+const mockFetchNodesChunked = vi.mocked(fetchNodesChunked);
+const mockFetchFile = vi.mocked(fetchFile);
+const mockFilterWatchTargets = vi.mocked(filterWatchTargets);
 
 describe("FigmaRestAdapter", () => {
   beforeEach(() => {
@@ -96,5 +102,57 @@ describe("FigmaRestAdapter", () => {
       3,
       10,
     );
+  });
+
+  it("should fall back to chunked fetch on payload-too-large error (page-based)", async () => {
+    mockFetchFileProactive.mockRejectedValue(new Error("Request too large"));
+    mockFetchFile.mockResolvedValue({
+      name: "Test",
+      lastModified: "",
+      version: "1",
+      document: {
+        id: "0:0",
+        name: "Document",
+        type: "DOCUMENT",
+        children: [{ id: "1:1", name: "Page 1", type: "CANVAS" }],
+      },
+    });
+    mockFilterWatchTargets.mockReturnValue([
+      { id: "1:1", name: "Page 1", type: "CANVAS" },
+    ]);
+    mockFetchNodesChunked.mockResolvedValue({
+      "1:1": { id: "1:1", name: "Page 1", type: "CANVAS" },
+    });
+
+    const adapter = new FigmaRestAdapter("test-token");
+    const pages = await adapter.fetchPages("file-key");
+
+    expect(mockFetchFileProactive).toHaveBeenCalled();
+    expect(mockFetchFile).toHaveBeenCalledWith("test-token", "file-key", 1);
+    expect(mockFetchNodesChunked).toHaveBeenCalled();
+    expect(Object.keys(pages)).toEqual(["Page 1"]);
+  });
+
+  it("should fall back to chunked fetch on payload-too-large error (node-based)", async () => {
+    mockFetchNodesProactive.mockRejectedValue(new Error("try a smaller request"));
+    mockFetchNodesChunked.mockResolvedValue({
+      "1:1": { id: "1:1", name: "Node A", type: "FRAME" },
+    });
+
+    const adapter = new FigmaRestAdapter("test-token");
+    const pages = await adapter.fetchPages("file-key", {
+      watchNodeIds: ["1:1"],
+    });
+
+    expect(mockFetchNodesProactive).toHaveBeenCalled();
+    expect(mockFetchNodesChunked).toHaveBeenCalled();
+    expect(Object.keys(pages)).toEqual(["Node A"]);
+  });
+
+  it("should re-throw non-payload errors", async () => {
+    mockFetchFileProactive.mockRejectedValue(new Error("Network error"));
+
+    const adapter = new FigmaRestAdapter("test-token");
+    await expect(adapter.fetchPages("file-key")).rejects.toThrow("Network error");
   });
 });

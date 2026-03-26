@@ -175,6 +175,68 @@ describe("FigmaMcpAdapter", () => {
     });
   });
 
+  describe("fetchPages with watchNodeIds filter", () => {
+    it("should filter by node IDs when watchNodeIds is provided", async () => {
+      const response: McpFigmaFileResponse = {
+        document: {
+          id: "0:0",
+          name: "Document",
+          type: "DOCUMENT",
+          children: [
+            { id: "1:1", name: "Page A", type: "CANVAS" },
+            { id: "1:2", name: "Page B", type: "CANVAS" },
+            { id: "1:3", name: "Page C", type: "CANVAS" },
+          ],
+        },
+      };
+
+      const adapter = FigmaMcpAdapter.fromMcpResponse(response);
+      const pages = await adapter.fetchPages("test-key", {
+        watchNodeIds: ["1:1", "1:3"],
+      });
+
+      expect(Object.keys(pages)).toEqual(["Page A", "Page C"]);
+    });
+
+    it("should prioritize watchNodeIds over watchPages", async () => {
+      const response: McpFigmaFileResponse = {
+        document: {
+          id: "0:0",
+          name: "Document",
+          type: "DOCUMENT",
+          children: [
+            { id: "1:1", name: "Page A", type: "CANVAS" },
+            { id: "1:2", name: "Page B", type: "CANVAS" },
+          ],
+        },
+      };
+
+      const adapter = FigmaMcpAdapter.fromMcpResponse(response);
+      const pages = await adapter.fetchPages("test-key", {
+        watchNodeIds: ["1:2"],
+        watchPages: ["Page A"],
+      });
+
+      expect(Object.keys(pages)).toEqual(["Page B"]);
+    });
+  });
+
+  describe("null/invalid node data handling", () => {
+    it("should handle null values in nodes gracefully", async () => {
+      const response: McpFigmaFileResponse = {
+        nodes: {
+          "1:1": {
+            document: { id: "1:1", name: "Valid", type: "FRAME" },
+          },
+        },
+      };
+
+      const adapter = FigmaMcpAdapter.fromMcpResponse(response);
+      const pages = await adapter.fetchPages("test-key");
+      expect(Object.keys(pages)).toEqual(["Valid"]);
+    });
+  });
+
   it("should have name property set to MCP", () => {
     const adapter = FigmaMcpAdapter.fromPages({});
     expect(adapter.name).toBe("MCP");
