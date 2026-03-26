@@ -1,4 +1,15 @@
+---
+description: Figma MCP 経由でデザイン差分検出を実行する。
+---
+
 Figma MCP 経由でデザイン差分検出を実行する。
+
+## 推奨 MCP ツール
+
+このコマンドは Claude Code CLI 専用です（Bash ツール・ローカル `tsx` 実行が前提）。
+
+- **推奨**: `get_figma_data`（figma-developer-mcp）を使用（PAT 認証、`.mcp.json` に設定が必要）
+- Claude Desktop / claude.ai で `use_figma` を使ったデザインチェックを行う場合は、このコマンドではなく `use_figma` ツールを直接呼び出してください
 
 ## 手順
 
@@ -10,8 +21,7 @@ Figma MCP 経由でデザイン差分検出を実行する。
    - `.env` が存在しない場合は環境変数をそのまま利用する（`.env` は必須ではない）
    - `FIGMA_FILE_KEY` が複数キー（カンマ区切り）の場合は、最初のキーを使用するか、ユーザーにどのキーを使うか確認する
 
-2. **Figma MCP でファイルデータを取得**: 利用可能な Figma MCP ツールでデータを取得する
-   - `use_figma`（Anthropic 内蔵）または `get_figma_data`（figma-developer-mcp）のいずれかを使用
+2. **Figma MCP でファイルデータを取得**: `get_figma_data`（figma-developer-mcp）MCP ツールでデータを取得する
    - 手順1で取得した `FIGMA_FILE_KEY` を fileKey として指定し、ファイルのノードツリーを取得する
    - `FIGMA_WATCH_NODE_IDS` が設定されている場合: 指定ノードIDを対象に取得する
    - MCP ツールのレスポンス JSON 全体を Write ツールで `/tmp/design-digest-mcp-response.json` に書き出す
@@ -23,22 +33,24 @@ Figma MCP 経由でデザイン差分検出を実行する。
 
 4. **結果を報告**: スクリプトの出力をユーザーに表示する
 
+## セットアップ
+
+リポジトリルートの `.mcp.json`（Git 管理外。`.gitignore` に含まれています）に以下を追加:
+```json
+{
+  "mcpServers": {
+    "figma-developer-mcp": {
+      "command": "npx",
+      "args": ["-y", "figma-developer-mcp", "--stdio"],
+      "env": { "FIGMA_API_KEY": "<your-figma-personal-access-token>" }
+    }
+  }
+}
+```
+
 ## 注意事項
 
-- Figma MCP ツールが必要:
-  - `use_figma`（Claude Desktop/claude.ai 内蔵）を利用する場合は追加設定不要
-  - `figma-developer-mcp` を使う場合は `.mcp.json` に設定を追加:
-    ```json
-    {
-      "mcpServers": {
-        "figma-developer-mcp": {
-          "command": "npx",
-          "args": ["-y", "figma-developer-mcp", "--stdio"],
-          "env": { "FIGMA_API_KEY": "<your-figma-personal-access-token>" }
-        }
-      }
-    }
-    ```
 - MCP レスポンスのデータ構造が REST API と異なる場合があるため、エラー時はレスポンスの構造を確認すること
 - `DRY_RUN=true` で通知なしのテスト実行が可能
 - スナップショットは `./snapshots/` に保存される（初回はベースライン作成のみ）
+- 経路の詳細は `docs/figma-mcp-headless-tracking.md` の「3経路の比較」を参照
