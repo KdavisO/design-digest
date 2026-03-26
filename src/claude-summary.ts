@@ -94,7 +94,7 @@ async function allSettledWithConcurrency<T>(
   tasks: (() => Promise<T>)[],
   concurrency: number,
 ): Promise<PromiseSettledResult<T>[]> {
-  if (!Number.isFinite(concurrency) || concurrency < 1) {
+  if (!Number.isFinite(concurrency) || concurrency < 1 || !Number.isInteger(concurrency)) {
     throw new Error(`concurrency must be a positive integer, got: ${concurrency}`);
   }
   const results: PromiseSettledResult<T>[] = new Array(tasks.length);
