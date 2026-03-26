@@ -35,7 +35,7 @@ Figma MCP 経由でデザイン差分検出を実行する。
 
 ## セットアップ
 
-`.mcp.json` に以下を追加:
+リポジトリルートの `.mcp.json`（Git 管理外。`.gitignore` に含まれています）に以下を追加:
 ```json
 {
   "mcpServers": {
