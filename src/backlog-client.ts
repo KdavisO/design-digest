@@ -139,6 +139,40 @@ export async function createBacklogIssue(
 }
 
 /**
+ * Render changes grouped by page into plain text lines.
+ * Shared by formatBacklogDescription and formatBacklogComment.
+ */
+function renderBacklogChangeLines(changes: ChangeEntry[]): string[] {
+  const lines: string[] = [];
+  const grouped: Record<string, ChangeEntry[]> = {};
+  for (const change of changes) {
+    (grouped[change.pageName] ??= []).push(change);
+  }
+
+  for (const [pageName, pageChanges] of Object.entries(grouped)) {
+    lines.push(`### ${pageName}`, "");
+    for (const change of pageChanges) {
+      switch (change.kind) {
+        case "added":
+          lines.push(`- Added: ${change.nodeName} (${change.nodeType})`);
+          break;
+        case "deleted":
+          lines.push(`- Deleted: ${change.nodeName} (${change.nodeType})`);
+          break;
+        case "renamed":
+          lines.push(`- Renamed: ${String(change.oldValue)} → ${String(change.newValue)}`);
+          break;
+        case "modified":
+          lines.push(`- Modified: ${change.nodeName}${change.property ? `.${change.property}` : ""}: ${formatVal(change.oldValue)} → ${formatVal(change.newValue)}`);
+          break;
+      }
+    }
+    lines.push("");
+  }
+  return lines;
+}
+
+/**
  * Format change entries into a Backlog issue description.
  * @param marker - Marker string for duplicate detection (defaults to `[DesignDigest] {fileKey}`)
  * @param scopeLabel - Optional scope label (e.g., "Node: Button (FRAME)" or "Page: Home")
@@ -168,36 +202,7 @@ export function formatBacklogDescription(
   }
 
   lines.push("## Changes", "");
-
-  const grouped: Record<string, ChangeEntry[]> = {};
-  for (const change of changes) {
-    (grouped[change.pageName] ??= []).push(change);
-  }
-
-  for (const [pageName, pageChanges] of Object.entries(grouped)) {
-    lines.push(`### ${pageName}`, "");
-    for (const change of pageChanges) {
-      switch (change.kind) {
-        case "added":
-          lines.push(`- Added: ${change.nodeName} (${change.nodeType})`);
-          break;
-        case "deleted":
-          lines.push(`- Deleted: ${change.nodeName} (${change.nodeType})`);
-          break;
-        case "renamed":
-          lines.push(
-            `- Renamed: ${String(change.oldValue)} → ${String(change.newValue)}`,
-          );
-          break;
-        case "modified":
-          lines.push(
-            `- Modified: ${change.nodeName}${change.property ? `.${change.property}` : ""}: ${formatVal(change.oldValue)} → ${formatVal(change.newValue)}`,
-          );
-          break;
-      }
-    }
-    lines.push("");
-  }
+  lines.push(...renderBacklogChangeLines(changes));
 
   return lines.join("\n");
 }
@@ -219,32 +224,7 @@ export function formatBacklogComment(
   }
 
   lines.push("## Changes", "");
-
-  const grouped: Record<string, ChangeEntry[]> = {};
-  for (const change of changes) {
-    (grouped[change.pageName] ??= []).push(change);
-  }
-
-  for (const [pageName, pageChanges] of Object.entries(grouped)) {
-    lines.push(`### ${pageName}`, "");
-    for (const change of pageChanges) {
-      switch (change.kind) {
-        case "added":
-          lines.push(`- Added: ${change.nodeName} (${change.nodeType})`);
-          break;
-        case "deleted":
-          lines.push(`- Deleted: ${change.nodeName} (${change.nodeType})`);
-          break;
-        case "renamed":
-          lines.push(`- Renamed: ${String(change.oldValue)} → ${String(change.newValue)}`);
-          break;
-        case "modified":
-          lines.push(`- Modified: ${change.nodeName}${change.property ? `.${change.property}` : ""}: ${formatVal(change.oldValue)} → ${formatVal(change.newValue)}`);
-          break;
-      }
-    }
-    lines.push("");
-  }
+  lines.push(...renderBacklogChangeLines(changes));
 
   return lines.join("\n");
 }

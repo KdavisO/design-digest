@@ -175,99 +175,11 @@ export async function createGitHubIssue(
 }
 
 /**
- * Format change entries into a GitHub Issue body (Markdown).
- * @param marker - Marker string for duplicate detection (defaults to `[DesignDigest] {fileKey}`)
- * @param scopeLabel - Optional scope label (e.g., "Node: Button (FRAME)" or "Page: Home")
+ * Render changes grouped by page into Markdown lines.
+ * Shared by formatGitHubIssueBody and formatGitHubIssueComment.
  */
-export function formatGitHubIssueBody(
-  fileKey: string,
-  changes: ChangeEntry[],
-  aiSummary?: string,
-  options?: { marker?: string; scopeLabel?: string },
-): string {
-  const figmaUrl = `https://www.figma.com/design/${fileKey}`;
-  const marker = options?.marker ?? `[DesignDigest] ${fileKey}`;
-  const lines: string[] = [
-    marker,
-    "",
-    `**Figma file:** [${fileKey}](${figmaUrl})`,
-  ];
-
-  if (options?.scopeLabel) {
-    lines.push(`**Scope:** ${options.scopeLabel}`);
-  }
-
-  lines.push(`**${changes.length} change(s) detected**`, "");
-
-  if (aiSummary) {
-    lines.push("## AI Summary", "", aiSummary, "");
-  }
-
-  lines.push("## Changes", "");
-
-  const grouped: Record<string, ChangeEntry[]> = {};
-  for (const change of changes) {
-    (grouped[change.pageName] ??= []).push(change);
-  }
-
-  for (const [pageName, pageChanges] of Object.entries(grouped)) {
-    lines.push(`### ${pageName}`, "");
-    for (const change of pageChanges) {
-      switch (change.kind) {
-        case "added":
-          lines.push(`- ➕ Added: **${change.nodeName}** (${change.nodeType})`);
-          break;
-        case "deleted":
-          lines.push(
-            `- ➖ Deleted: **${change.nodeName}** (${change.nodeType})`,
-          );
-          break;
-        case "renamed":
-          lines.push(
-            `- 🏷️ Renamed: \`${String(change.oldValue)}\` → \`${String(change.newValue)}\``,
-          );
-          break;
-        case "modified": {
-          const target =
-            change.property != null && change.property !== ""
-              ? `**${change.nodeName}**.${change.property}`
-              : `**${change.nodeName}**`;
-          lines.push(
-            `- ✏️ Modified: ${target}: \`${formatVal(change.oldValue)}\` → \`${formatVal(change.newValue)}\``,
-          );
-          break;
-        }
-      }
-    }
-    lines.push("");
-  }
-
-  lines.push(
-    "---",
-    "*This issue was automatically created by [DesignDigest](https://github.com/KdavisO/design-digest).*",
-  );
-
-  return lines.join("\n");
-}
-
-/**
- * Format a comment body for appending updated changes to an existing issue.
- */
-export function formatGitHubIssueComment(
-  changes: ChangeEntry[],
-  aiSummary?: string,
-): string {
-  const lines: string[] = [
-    `**${changes.length} new change(s) detected** (${new Date().toISOString().split("T")[0]})`,
-    "",
-  ];
-
-  if (aiSummary) {
-    lines.push("## AI Summary", "", aiSummary, "");
-  }
-
-  lines.push("## Changes", "");
-
+function renderGitHubChangeLines(changes: ChangeEntry[]): string[] {
+  const lines: string[] = [];
   const grouped: Record<string, ChangeEntry[]> = {};
   for (const change of changes) {
     (grouped[change.pageName] ??= []).push(change);
@@ -298,6 +210,67 @@ export function formatGitHubIssueComment(
     }
     lines.push("");
   }
+  return lines;
+}
+
+/**
+ * Format change entries into a GitHub Issue body (Markdown).
+ * @param marker - Marker string for duplicate detection (defaults to `[DesignDigest] {fileKey}`)
+ * @param scopeLabel - Optional scope label (e.g., "Node: Button (FRAME)" or "Page: Home")
+ */
+export function formatGitHubIssueBody(
+  fileKey: string,
+  changes: ChangeEntry[],
+  aiSummary?: string,
+  options?: { marker?: string; scopeLabel?: string },
+): string {
+  const figmaUrl = `https://www.figma.com/design/${fileKey}`;
+  const marker = options?.marker ?? `[DesignDigest] ${fileKey}`;
+  const lines: string[] = [
+    marker,
+    "",
+    `**Figma file:** [${fileKey}](${figmaUrl})`,
+  ];
+
+  if (options?.scopeLabel) {
+    lines.push(`**Scope:** ${options.scopeLabel}`);
+  }
+
+  lines.push(`**${changes.length} change(s) detected**`, "");
+
+  if (aiSummary) {
+    lines.push("## AI Summary", "", aiSummary, "");
+  }
+
+  lines.push("## Changes", "");
+  lines.push(...renderGitHubChangeLines(changes));
+
+  lines.push(
+    "---",
+    "*This issue was automatically created by [DesignDigest](https://github.com/KdavisO/design-digest).*",
+  );
+
+  return lines.join("\n");
+}
+
+/**
+ * Format a comment body for appending updated changes to an existing issue.
+ */
+export function formatGitHubIssueComment(
+  changes: ChangeEntry[],
+  aiSummary?: string,
+): string {
+  const lines: string[] = [
+    `**${changes.length} new change(s) detected** (${new Date().toISOString().split("T")[0]})`,
+    "",
+  ];
+
+  if (aiSummary) {
+    lines.push("## AI Summary", "", aiSummary, "");
+  }
+
+  lines.push("## Changes", "");
+  lines.push(...renderGitHubChangeLines(changes));
 
   return lines.join("\n");
 }
