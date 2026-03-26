@@ -6,6 +6,8 @@
   "scripts": {
     "diff": "tsx src/diff.ts",
     "diff:dry-run": "DRY_RUN=true tsx src/diff.ts",
+    "design-check": "tsx src/design-check.ts",
+    "design-check:dry-run": "DRY_RUN=true tsx src/design-check.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint src/",
