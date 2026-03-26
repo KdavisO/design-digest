@@ -20,7 +20,7 @@ import {
   groupByPage,
   convertMarkdownToSlackMrkdwn,
 } from "./diff-engine.js";
-import { generateSummary, generatePageSummaries } from "./claude-summary.js";
+import { generatePageSummaries } from "./claude-summary.js";
 import { sendSlackNotification } from "./notify.js";
 import {
   fetchOpenIssues,
@@ -318,19 +318,14 @@ async function main(): Promise<void> {
     console.log("\nNo SLACK_WEBHOOK_URL configured — skipping notification.");
   }
 
-  // Memoize per-file AI summaries to avoid duplicate Claude API calls
-  // Caches both successes and failures so each fileKey is attempted at most once
-  const perFileSummaryCache = new Map<string, Promise<string | undefined>>();
-  function getPerFileSummary(
-    apiKey: string,
-    fileKey: string,
-    changes: ChangeEntry[],
-  ): Promise<string | undefined> {
-    const cached = perFileSummaryCache.get(fileKey);
-    if (cached !== undefined) return cached;
-    const promise = generateSummary(apiKey, changes).catch(() => undefined);
-    perFileSummaryCache.set(fileKey, promise);
-    return promise;
+  // Reuse per-page summaries for issue bodies instead of making additional API calls.
+  // Joins page summaries into a single per-file summary text.
+  function getPerFileSummary(fileKey: string): string | undefined {
+    const fileSummaries = perFileSummaries.get(fileKey);
+    if (!fileSummaries || fileSummaries.size === 0) return undefined;
+    return [...fileSummaries.entries()]
+      .map(([pageName, summary]) => `## ${pageName}\n${summary}`)
+      .join("\n\n");
   }
 
   // Create GitHub Issues
@@ -390,10 +385,8 @@ async function main(): Promise<void> {
           title = githubDefaultTitle(result.changes);
         }
 
-        // Generate per-file AI summary (memoized)
-        const perFileSummary = config.anthropicApiKey
-          ? await getPerFileSummary(config.anthropicApiKey, result.fileKey, result.changes)
-          : undefined;
+        // Reuse per-page summaries as per-file summary for issue body
+        const perFileSummary = getPerFileSummary(result.fileKey);
 
         const body = formatGitHubIssueBody(
           result.fileKey,
@@ -473,10 +466,8 @@ async function main(): Promise<void> {
           title = defaultTitle(result.changes);
         }
 
-        // Generate per-file AI summary (memoized, shared with GitHub Issue)
-        const perFileSummary = config.anthropicApiKey
-          ? await getPerFileSummary(config.anthropicApiKey, result.fileKey, result.changes)
-          : undefined;
+        // Reuse per-page summaries as per-file summary for issue body
+        const perFileSummary = getPerFileSummary(result.fileKey);
 
         const description = formatBacklogDescription(
           result.fileKey,
