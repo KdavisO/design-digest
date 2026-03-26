@@ -419,11 +419,26 @@ describe("formatConsoleReport", () => {
       },
     ];
     const report = formatConsoleReport("abc123", changes);
-    // Home page summary
-    expect(report).toContain("1 added");
-    expect(report).toContain("1 deleted");
-    // Settings page summary
-    expect(report).toContain("1 modified");
+    // Verify per-page summaries appear after their respective page headers
+    const homeIndex = report.indexOf("Home");
+    const settingsIndex = report.indexOf("Settings");
+    expect(homeIndex).toBeGreaterThanOrEqual(0);
+    expect(settingsIndex).toBeGreaterThanOrEqual(0);
+    expect(homeIndex).toBeLessThan(settingsIndex);
+
+    // "1 added" should appear between Home and Settings headers
+    const homeAddedIndex = report.indexOf("1 added", homeIndex);
+    expect(homeAddedIndex).toBeGreaterThan(homeIndex);
+    expect(homeAddedIndex).toBeLessThan(settingsIndex);
+
+    // "1 deleted" should appear between Home and Settings headers
+    const homeDeletedIndex = report.indexOf("1 deleted", homeIndex);
+    expect(homeDeletedIndex).toBeGreaterThan(homeIndex);
+    expect(homeDeletedIndex).toBeLessThan(settingsIndex);
+
+    // "1 modified" should appear after Settings header
+    const settingsModifiedIndex = report.indexOf("1 modified", settingsIndex);
+    expect(settingsModifiedIndex).toBeGreaterThan(settingsIndex);
   });
 });
 
@@ -464,8 +479,21 @@ describe("formatSlackReport", () => {
       },
     ];
     const report = formatSlackReport("abc123", changes);
-    expect(report).toContain("1 added");
-    expect(report).toContain("1 deleted");
+    // Verify per-page summaries appear after their respective page headers
+    const homeIndex = report.indexOf("*Home*");
+    const settingsIndex = report.indexOf("*Settings*");
+    expect(homeIndex).toBeGreaterThanOrEqual(0);
+    expect(settingsIndex).toBeGreaterThanOrEqual(0);
+    expect(homeIndex).toBeLessThan(settingsIndex);
+
+    // "1 added" should appear between Home and Settings headers
+    const homeAddedIndex = report.indexOf("1 added", homeIndex);
+    expect(homeAddedIndex).toBeGreaterThan(homeIndex);
+    expect(homeAddedIndex).toBeLessThan(settingsIndex);
+
+    // "1 deleted" should appear after Settings header
+    const settingsDeletedIndex = report.indexOf("1 deleted", settingsIndex);
+    expect(settingsDeletedIndex).toBeGreaterThan(settingsIndex);
   });
 });
 
