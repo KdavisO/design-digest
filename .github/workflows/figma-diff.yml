@@ -19,11 +19,27 @@ jobs:
 
       - run: npm ci
 
+      - name: Find previous successful run
+        id: prev-run
+        run: |
+          RUN_ID=$(gh run list \
+            --workflow=figma-diff.yml \
+            --status=success \
+            --limit=1 \
+            --json databaseId \
+            -q '.[0].databaseId')
+          echo "run_id=${RUN_ID}" >> "$GITHUB_OUTPUT"
+        env:
+          GH_TOKEN: ${{ github.token }}
+
       - name: Download previous snapshot
+        if: steps.prev-run.outputs.run_id != ''
         uses: actions/download-artifact@v4
         with:
           name: design-digest-snapshot
           path: snapshots
+          run-id: ${{ steps.prev-run.outputs.run_id }}
+          github-token: ${{ github.token }}
         continue-on-error: true
 
       - name: Run DesignDigest
