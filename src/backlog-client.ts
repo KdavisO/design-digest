@@ -43,8 +43,9 @@ export async function findExistingIssue(
   config: BacklogConfig,
   marker: string,
 ): Promise<BacklogIssue | null> {
-  // Backlog statuses 1=Open, 2=In Progress, 3=Resolved — exclude 4=Closed
-  const OPEN_STATUS_IDS = ["1", "2", "3"];
+  // Backlog closed status ID is 4. Custom statuses may exist beyond 1-3,
+  // so we fetch without status filter and exclude closed issues client-side.
+  const CLOSED_STATUS_ID = 4;
 
   const params = new URLSearchParams({
     apiKey: config.apiKey,
@@ -54,9 +55,6 @@ export async function findExistingIssue(
     sort: "created",
     order: "desc",
   });
-  for (const statusId of OPEN_STATUS_IDS) {
-    params.append("statusId[]", statusId);
-  }
 
   const url = `${baseUrl(config.spaceId)}/issues?${params}`;
   const response = await fetch(url);
@@ -72,11 +70,14 @@ export async function findExistingIssue(
   if (issues.length === 0) return null;
 
   // Validate marker exact line match in description to prevent partial matches
-  // (e.g., "node:1:2" matching "node:1:23")
+  // (e.g., "node:1:2" matching "node:1:23"), and exclude closed issues.
   const escapedMarker = marker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const markerRegex = new RegExp(`(^|\\r?\\n)${escapedMarker}(\\r?\\n|$)`);
   const match = issues.find(
-    (issue) => issue.description != null && markerRegex.test(issue.description),
+    (issue) =>
+      issue.description != null &&
+      markerRegex.test(issue.description) &&
+      issue.status?.id !== CLOSED_STATUS_ID,
   );
   if (!match) return null;
 

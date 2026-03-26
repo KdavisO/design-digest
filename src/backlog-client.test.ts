@@ -156,7 +156,7 @@ describe("findExistingIssue", () => {
     expect(result).toEqual(mockIssue);
   });
 
-  it("passes full marker as keyword to API with open status filter", async () => {
+  it("passes full marker as keyword to API", async () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
       new Response(JSON.stringify([]), { status: 200 }),
     );
@@ -165,9 +165,56 @@ describe("findExistingIssue", () => {
 
     const url = fetchSpy.mock.calls[0][0] as string;
     expect(url).toContain("keyword=%5BDesignDigest%5D+abc123+page%3AHome");
-    expect(url).toContain("statusId%5B%5D=1");
-    expect(url).toContain("statusId%5B%5D=2");
-    expect(url).toContain("statusId%5B%5D=3");
+    expect(url).toContain("count=20");
+  });
+
+  it("excludes closed issues (status.id === 4)", async () => {
+    const closedIssue = {
+      id: 1,
+      issueKey: "TEST-1",
+      summary: "changes",
+      description: "[DesignDigest] abc123 node:1:2\n\ntest",
+      status: { id: 4, name: "Closed" },
+    };
+    const openIssue = {
+      id: 2,
+      issueKey: "TEST-2",
+      summary: "changes",
+      description: "[DesignDigest] abc123 node:1:2\n\ntest",
+      status: { id: 1, name: "Open" },
+    };
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(JSON.stringify([closedIssue, openIssue]), { status: 200 }),
+    );
+
+    const result = await findExistingIssue(mockConfig, "[DesignDigest] abc123 node:1:2");
+    expect(result).toEqual({
+      id: 2,
+      issueKey: "TEST-2",
+      summary: "changes",
+      description: "[DesignDigest] abc123 node:1:2\n\ntest",
+    });
+  });
+
+  it("matches issues with custom statuses (non-closed)", async () => {
+    const customStatusIssue = {
+      id: 1,
+      issueKey: "TEST-1",
+      summary: "changes",
+      description: "[DesignDigest] abc123 node:1:2\n\ntest",
+      status: { id: 5, name: "Review" },
+    };
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(JSON.stringify([customStatusIssue]), { status: 200 }),
+    );
+
+    const result = await findExistingIssue(mockConfig, "[DesignDigest] abc123 node:1:2");
+    expect(result).toEqual({
+      id: 1,
+      issueKey: "TEST-1",
+      summary: "changes",
+      description: "[DesignDigest] abc123 node:1:2\n\ntest",
+    });
   });
 
   it("rejects partial marker matches in description", async () => {

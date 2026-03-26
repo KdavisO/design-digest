@@ -394,58 +394,62 @@ async function main(): Promise<void> {
         const issueUnits = groupChangesForIssues(result.fileKey, result.changes);
 
         for (const unit of issueUnits) {
-          // Check for duplicate issues using the unit marker
-          const existing = findExistingGitHubIssue(openIssues, unit.marker);
-          if (existing) {
-            // Add comment with updated changes instead of skipping
-            const summary = getSummaryForChanges(result.fileKey, unit.changes);
-            const commentBody = formatGitHubIssueComment(unit.changes, summary);
-            await addGitHubIssueComment(ghIssueConfig, existing.number, commentBody);
-            console.log(
-              `  Comment added to #${existing.number} — ${unit.label}`,
-            );
-            continue;
-          }
-
-          // Generate title
-          let title: string;
-          if (config.anthropicApiKey) {
-            try {
-              title = await generateGitHubIssueTitle(
-                config.anthropicApiKey,
-                unit.changes,
+          try {
+            // Check for duplicate issues using the unit marker
+            const existing = findExistingGitHubIssue(openIssues, unit.marker);
+            if (existing) {
+              // Add comment with updated changes instead of skipping
+              const summary = getSummaryForChanges(result.fileKey, unit.changes);
+              const commentBody = formatGitHubIssueComment(unit.changes, summary);
+              await addGitHubIssueComment(ghIssueConfig, existing.number, commentBody);
+              console.log(
+                `  Comment added to #${existing.number} — ${unit.label}`,
               );
-            } catch {
+              continue;
+            }
+
+            // Generate title
+            let title: string;
+            if (config.anthropicApiKey) {
+              try {
+                title = await generateGitHubIssueTitle(
+                  config.anthropicApiKey,
+                  unit.changes,
+                );
+              } catch {
+                title = githubDefaultTitle(unit.changes);
+              }
+            } else {
               title = githubDefaultTitle(unit.changes);
             }
-          } else {
-            title = githubDefaultTitle(unit.changes);
+
+            const aiSummary = getSummaryForChanges(result.fileKey, unit.changes);
+            const scopeLabel = unit.scope === "node"
+              ? `Node: ${unit.label}`
+              : `Page: ${unit.label}`;
+
+            const body = formatGitHubIssueBody(
+              result.fileKey,
+              unit.changes,
+              aiSummary,
+              { marker: unit.marker, scopeLabel },
+            );
+
+            const issue = await createGitHubIssue(ghIssueConfig, title, body);
+            // Add to cache to prevent duplicates within the same run
+            openIssues.push({
+              number: issue.number,
+              title: issue.title,
+              html_url: issue.html_url,
+              body,
+              pull_request: undefined,
+            });
+            console.log(
+              `  GitHub Issue created: #${issue.number} — ${issue.title}`,
+            );
+          } catch (unitErr) {
+            console.warn(`  Failed to process unit "${unit.label}":`, unitErr);
           }
-
-          const aiSummary = getSummaryForChanges(result.fileKey, unit.changes);
-          const scopeLabel = unit.scope === "node"
-            ? `Node: ${unit.label}`
-            : `Page: ${unit.label}`;
-
-          const body = formatGitHubIssueBody(
-            result.fileKey,
-            unit.changes,
-            aiSummary,
-            { marker: unit.marker, scopeLabel },
-          );
-
-          const issue = await createGitHubIssue(ghIssueConfig, title, body);
-          // Add to cache to prevent duplicates within the same run
-          openIssues.push({
-            number: issue.number,
-            title: issue.title,
-            html_url: issue.html_url,
-            body,
-            pull_request: undefined,
-          });
-          console.log(
-            `  GitHub Issue created: #${issue.number} — ${issue.title}`,
-          );
         }
       }
     } catch (err) {
@@ -485,52 +489,56 @@ async function main(): Promise<void> {
         const issueUnits = groupChangesForIssues(result.fileKey, result.changes);
 
         for (const unit of issueUnits) {
-          // Check for duplicate issues using the unit marker
-          const existing = await findExistingIssue(backlogConfig, unit.marker);
-          if (existing) {
-            // Add comment with updated changes instead of skipping
-            const summary = getSummaryForChanges(result.fileKey, unit.changes);
-            const commentBody = formatBacklogComment(unit.changes, summary);
-            await addBacklogComment(backlogConfig, existing.issueKey, commentBody);
-            console.log(
-              `  Comment added to ${existing.issueKey} — ${unit.label}`,
-            );
-            continue;
-          }
-
-          // Generate title (use Claude if available, otherwise default)
-          let title: string;
-          if (config.anthropicApiKey) {
-            try {
-              title = await generateBacklogTitle(
-                config.anthropicApiKey,
-                unit.changes,
+          try {
+            // Check for duplicate issues using the unit marker
+            const existing = await findExistingIssue(backlogConfig, unit.marker);
+            if (existing) {
+              // Add comment with updated changes instead of skipping
+              const summary = getSummaryForChanges(result.fileKey, unit.changes);
+              const commentBody = formatBacklogComment(unit.changes, summary);
+              await addBacklogComment(backlogConfig, existing.issueKey, commentBody);
+              console.log(
+                `  Comment added to ${existing.issueKey} — ${unit.label}`,
               );
-            } catch {
+              continue;
+            }
+
+            // Generate title (use Claude if available, otherwise default)
+            let title: string;
+            if (config.anthropicApiKey) {
+              try {
+                title = await generateBacklogTitle(
+                  config.anthropicApiKey,
+                  unit.changes,
+                );
+              } catch {
+                title = defaultTitle(unit.changes);
+              }
+            } else {
               title = defaultTitle(unit.changes);
             }
-          } else {
-            title = defaultTitle(unit.changes);
+
+            const aiSummary = getSummaryForChanges(result.fileKey, unit.changes);
+            const scopeLabel = unit.scope === "node"
+              ? `Node: ${unit.label}`
+              : `Page: ${unit.label}`;
+
+            const description = formatBacklogDescription(
+              result.fileKey,
+              unit.changes,
+              aiSummary,
+              { marker: unit.marker, scopeLabel },
+            );
+
+            const issue = await createBacklogIssue(
+              backlogConfig,
+              title,
+              description,
+            );
+            console.log(`  Backlog issue created: ${issue.issueKey} — ${issue.summary}`);
+          } catch (unitErr) {
+            console.warn(`  Failed to process unit "${unit.label}":`, unitErr);
           }
-
-          const aiSummary = getSummaryForChanges(result.fileKey, unit.changes);
-          const scopeLabel = unit.scope === "node"
-            ? `Node: ${unit.label}`
-            : `Page: ${unit.label}`;
-
-          const description = formatBacklogDescription(
-            result.fileKey,
-            unit.changes,
-            aiSummary,
-            { marker: unit.marker, scopeLabel },
-          );
-
-          const issue = await createBacklogIssue(
-            backlogConfig,
-            title,
-            description,
-          );
-          console.log(`  Backlog issue created: ${issue.issueKey} — ${issue.summary}`);
         }
       }
     } catch (err) {
