@@ -3,3 +3,4 @@ dist/
 snapshots/
 .env
 *.tgz
+.mcp.json
