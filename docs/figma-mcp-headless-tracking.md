@@ -39,7 +39,7 @@ DesignDigest における Figma データ取得経路の責務・制約・推奨
 - `/design-check` コマンド → `get_figma_data` MCP ツール → `FigmaMcpAdapter` → `src/design-check.ts`
 - PAT 認証のため `.mcp.json` に設定するだけで利用可能
 - Claude Code CLI で MCP ツールとして直接呼び出せる
-- `use_figma` は Claude Code CLI では未接続のため利用不可
+- このリポジトリの `/design-check` コマンドでは `use_figma` ツールが提供されていないため、`get_figma_data` を使用する
 
 ### 3. Claude Desktop / claude.ai での利用
 
@@ -75,9 +75,9 @@ DesignDigest における Figma データ取得経路の責務・制約・推奨
 
 ## 現在のステータス
 
-**Figma MCP サーバー: 採用見送り（CI/CD 用途）（2026-03-26 時点）**
+**公式 Figma MCP サーバー（= Figma MCP（use_figma）のバックエンド）: 採用見送り（CI/CD 用途）（2026-03-26 時点）**
 
-Figma MCP サーバーはオープンベータ段階（2026年3月24日開始）であり、ヘッドレス環境での自動実行に必要な要件を満たしていない。
+公式 Figma MCP サーバー（= Figma MCP（use_figma）のバックエンド）はオープンベータ段階（2026年3月24日開始）であり、ヘッドレス環境での自動実行に必要な要件を満たしていない。
 
 ## 調査履歴
 
