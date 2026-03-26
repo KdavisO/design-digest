@@ -420,8 +420,8 @@ describe("formatConsoleReport", () => {
     ];
     const report = formatConsoleReport("abc123", changes);
     // Verify per-page summaries appear after their respective page headers
-    const homeIndex = report.indexOf("Home");
-    const settingsIndex = report.indexOf("Settings");
+    const homeIndex = report.search(/^📄 Home/m);
+    const settingsIndex = report.search(/^📄 Settings/m);
     expect(homeIndex).toBeGreaterThanOrEqual(0);
     expect(settingsIndex).toBeGreaterThanOrEqual(0);
     expect(homeIndex).toBeLessThan(settingsIndex);

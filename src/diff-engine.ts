@@ -564,10 +564,27 @@ function groupByPage(changes: ChangeEntry[]): Record<string, ChangeEntry[]> {
 }
 
 function formatSummaryCounts(changes: ChangeEntry[]): string {
-  const added = changes.filter((c) => c.kind === "added").length;
-  const deleted = changes.filter((c) => c.kind === "deleted").length;
-  const modified = changes.filter((c) => c.kind === "modified").length;
-  const renamed = changes.filter((c) => c.kind === "renamed").length;
+  let added = 0;
+  let deleted = 0;
+  let modified = 0;
+  let renamed = 0;
+
+  for (const change of changes) {
+    switch (change.kind) {
+      case "added":
+        added++;
+        break;
+      case "deleted":
+        deleted++;
+        break;
+      case "modified":
+        modified++;
+        break;
+      case "renamed":
+        renamed++;
+        break;
+    }
+  }
 
   const parts: string[] = [];
   if (added > 0) parts.push(`➕ ${added} added`);
