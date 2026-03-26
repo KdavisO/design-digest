@@ -141,7 +141,7 @@ AI summaries are generated **per page** — each Figma page with changes trigger
 
 - **API calls per run** = number of pages with changes (across all monitored files)
 - **Fault isolation** — if one page's summary fails, other pages still get their summaries
-- **Parallel execution** — all page summaries are requested concurrently via `Promise.allSettled`
+- **Parallel execution (per file)** — for each Figma file, all changed pages in that file are requested concurrently via `Promise.allSettled`, while files themselves are processed sequentially
 
 #### Claude API cost estimate
 
