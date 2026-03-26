@@ -1,3 +1,7 @@
+---
+description: Figma MCP 経由でデザイン差分検出を実行する。
+---
+
 Figma MCP 経由でデザイン差分検出を実行する。
 
 ## 推奨 MCP ツール
