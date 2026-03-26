@@ -60,6 +60,7 @@ export class FigmaMcpAdapter implements FigmaDataAdapter {
         const node: FigmaNode = isWrappedNode(nodeData)
           ? nodeData.document
           : nodeData as FigmaNode;
+        if (!isValidNode(node)) continue;
         pages[node.name || id] = sanitizeNode(node);
       }
     }
@@ -118,4 +119,10 @@ function isWrappedNode(
   if (data == null || typeof data !== "object") return false;
   const record = data as Record<string, unknown>;
   return "document" in data && record.document != null && typeof record.document === "object";
+}
+
+function isValidNode(node: unknown): node is FigmaNode {
+  if (node == null || typeof node !== "object") return false;
+  const n = node as Record<string, unknown>;
+  return typeof n.id === "string" && typeof n.name === "string" && typeof n.type === "string";
 }

@@ -50,7 +50,14 @@ function parseArgs(): CliArgs {
   }
 
   // Require file key from args or env
-  fileKey ??= process.env.FIGMA_FILE_KEY?.split(",")[0]?.trim();
+  if (!fileKey) {
+    const envKeys = process.env.FIGMA_FILE_KEY?.split(",").map((s) => s.trim()).filter(Boolean);
+    if (envKeys && envKeys.length > 1) {
+      console.error("Error: FIGMA_FILE_KEY contains multiple keys. Use --file-key to specify which one.");
+      process.exit(1);
+    }
+    fileKey = envKeys?.[0];
+  }
 
   if (!fileKey) {
     console.error("Error: --file-key is required (or set FIGMA_FILE_KEY env var)");
@@ -84,8 +91,8 @@ async function main(): Promise<void> {
   // 3. Load previous snapshot
   const previous = await loadSnapshot(snapshotDir, fileKey);
 
-  // 4. Save current snapshot
-  await saveSnapshot(snapshotDir, fileKey, pages);
+  // 4. Save current snapshot (preserving existing versionId, if any)
+  await saveSnapshot(snapshotDir, fileKey, pages, previous?.versionId);
   console.log("  Snapshot saved.");
 
   if (!previous) {

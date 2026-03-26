@@ -234,8 +234,7 @@ describe("FigmaMcpAdapter", () => {
 
       const adapter = FigmaMcpAdapter.fromMcpResponse(response);
       const pages = await adapter.fetchPages("test-key");
-      // "1:2" has null document, so isWrappedNode returns false and it's treated as a raw node
-      // The null is cast as FigmaNode, so we get a key but the value is null-ish
+      expect(Object.keys(pages)).toEqual(["Valid"]);
       expect(pages["Valid"]).toBeDefined();
     });
 
