@@ -418,16 +418,9 @@ describe("fetchFileProactive", () => {
       },
     };
 
-    // fetchNodesChunked will first fetch at depth=1, then batch children
-    const shallowPage: FigmaNode = {
-      id: "1:0", name: "BigPage", type: "CANVAS",
-      children: manyChildren,
-    };
-
-    // Mock: depth=1 file, then fetchNodesChunked internals (depth=1 discovery + batches)
+    // Mock: depth=1 file fetch, then batch responses (no discovery fetch — precomputedShallow is used)
     const fetchSpy = vi.spyOn(globalThis, "fetch")
-      .mockResolvedValueOnce(mockFileResponse(shallowFile)) // depth=1 file fetch
-      .mockResolvedValueOnce(mockNodesResponse({ "1:0": shallowPage })); // chunked: depth=1 discovery
+      .mockResolvedValueOnce(mockFileResponse(shallowFile)); // depth=1 file fetch
 
     // Mock batch responses for all 60 children (batch size 3 for 60 children)
     for (let i = 0; i < 60; i += 3) {
@@ -493,5 +486,39 @@ describe("fetchNodesProactive", () => {
     expect(nodes["1:0"].name).toBe("SmallNode");
     // Only 1 fetch call — shallow result reused
     expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("proactively chunks large nodes with many children", async () => {
+    const childCount = 60;
+    const manyChildren = Array.from({ length: childCount }, (_, i) => ({
+      id: `1:${i + 1}`, name: `Child${i + 1}`, type: "FRAME" as const,
+    }));
+
+    const shallowNode: FigmaNode = {
+      id: "1:0", name: "LargeNode", type: "CANVAS",
+      children: manyChildren,
+    };
+
+    const fetchSpy = vi.spyOn(globalThis, "fetch")
+      // 1st call: shallow fetch at depth=1
+      .mockResolvedValueOnce(mockNodesResponse({ "1:0": shallowNode }));
+
+    // fetchNodesChunked receives precomputedShallow, so no discovery fetch needed.
+    // It will batch children directly. With adaptiveBatchSize(60, 5) = 3, that's 20 batches.
+    for (let i = 0; i < childCount; i += 3) {
+      const batch: Record<string, FigmaNode> = {};
+      for (let j = i; j < Math.min(i + 3, childCount); j++) {
+        batch[`1:${j + 1}`] = { id: `1:${j + 1}`, name: `Child${j + 1}`, type: "FRAME" };
+      }
+      fetchSpy.mockResolvedValueOnce(mockNodesResponse(batch));
+    }
+
+    const { nodes, chunkedNodes } = await fetchNodesProactive("token", "fileKey", ["1:0"]);
+
+    expect(nodes["1:0"]).toBeDefined();
+    expect(nodes["1:0"].children).toHaveLength(childCount);
+    expect(chunkedNodes).toContain("LargeNode");
+    // 1 shallow fetch + 20 child batch fetches (no redundant discovery fetch)
+    expect(fetchSpy).toHaveBeenCalledTimes(21);
   });
 });

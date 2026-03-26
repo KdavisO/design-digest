@@ -91,6 +91,7 @@ export function adaptiveBatchSize(childCount: number, baseBatchSize: number): nu
 /**
  * Fetch nodes in batches to avoid payload size limits on large files.
  * First fetches at depth=1 to get child IDs, then fetches children in batches.
+ * If `precomputedShallow` is provided, skips the initial depth=1 discovery request.
  */
 export async function fetchNodesChunked(
   token: string,
@@ -98,11 +99,12 @@ export async function fetchNodesChunked(
   nodeIds: string[],
   depth?: number,
   batchSize: number = 5,
+  precomputedShallow?: Record<string, FigmaNode>,
 ): Promise<Record<string, FigmaNode>> {
   const result: Record<string, FigmaNode> = {};
 
-  // Batch discovery: fetch all target nodes at depth=1 in one request
-  const shallowAll = await fetchNodes(token, fileKey, nodeIds, 1);
+  // Use precomputed shallow data if available, otherwise fetch at depth=1
+  const shallowAll = precomputedShallow ?? await fetchNodes(token, fileKey, nodeIds, 1);
 
   for (const nodeId of nodeIds) {
     const parentNode = shallowAll[nodeId];
@@ -157,7 +159,7 @@ const PROACTIVE_CHUNK_THRESHOLD = 50;
  * Fetch file with proactive chunking for large pages.
  * Fetches at depth=1 first to estimate size, then decides per-page whether
  * to fetch the full subtree or chunk by children.
- * Returns pages keyed by page name.
+ * Returns pages keyed by page name, plus targetPageIds for fallback use.
  */
 export async function fetchFileProactive(
   token: string,
@@ -165,7 +167,7 @@ export async function fetchFileProactive(
   watchPages: string[],
   depth?: number,
   batchSize: number = 5,
-): Promise<{ pages: Record<string, FigmaNode>; chunkedPages: string[] }> {
+): Promise<{ pages: Record<string, FigmaNode>; chunkedPages: string[]; targetPageIds: string[] }> {
   // Step 1: Fetch shallow file to get page-level structure
   const shallowFile = await fetchFile(token, fileKey, 1);
   const targetPages = filterWatchTargets(shallowFile, watchPages);
@@ -225,12 +227,18 @@ export async function fetchFileProactive(
       }
 
       const largePageIds = largePages.map((p) => p.id);
+      // Build precomputed shallow map from the depth=1 file fetch to avoid redundant API call
+      const precomputedShallow: Record<string, FigmaNode> = {};
+      for (const page of largePages) {
+        precomputedShallow[page.id] = page;
+      }
       const chunkedNodes = await fetchNodesChunked(
         token,
         fileKey,
         largePageIds,
         depth,
         globalEffectiveBatch,
+        precomputedShallow,
       );
       for (const page of largePages) {
         const node = chunkedNodes[page.id];
@@ -241,7 +249,8 @@ export async function fetchFileProactive(
     }
   }
 
-  return { pages, chunkedPages };
+  const targetPageIds = targetPages.map((p) => p.id);
+  return { pages, chunkedPages, targetPageIds };
 }
 
 /**
@@ -316,12 +325,18 @@ export async function fetchNodesProactive(
         chunkedNodeNames.push(node?.name ?? nodeId);
       }
 
+      // Build precomputed shallow map to avoid redundant depth=1 fetch
+      const precomputedShallow: Record<string, FigmaNode> = {};
+      for (const nodeId of largeNodeIds) {
+        if (shallowNodes[nodeId]) precomputedShallow[nodeId] = shallowNodes[nodeId];
+      }
       const chunkedNodes = await fetchNodesChunked(
         token,
         fileKey,
         largeNodeIds,
         depth,
         globalEffectiveBatch,
+        precomputedShallow,
       );
       for (const nodeId of largeNodeIds) {
         if (chunkedNodes[nodeId]) {
