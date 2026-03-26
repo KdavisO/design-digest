@@ -20,8 +20,8 @@ export interface McpFigmaFileResponse {
   lastModified?: string;
   /** Document root node */
   document?: FigmaNode;
-  /** Nodes keyed by ID (from get_nodes-style responses) */
-  nodes?: Record<string, { document: FigmaNode } | FigmaNode>;
+  /** Nodes keyed by ID (from use_figma node responses). Values may be malformed. */
+  nodes?: Record<string, { document: FigmaNode | null } | FigmaNode | null>;
 }
 
 /**
@@ -57,11 +57,12 @@ export class FigmaMcpAdapter implements FigmaDataAdapter {
     } else if (response.nodes) {
       // Node-specific response — normalize nodes
       for (const [id, nodeData] of Object.entries(response.nodes)) {
-        const node: FigmaNode = isWrappedNode(nodeData)
+        if (nodeData == null) continue;
+        const candidate = isWrappedNode(nodeData)
           ? nodeData.document
-          : nodeData as FigmaNode;
-        if (!isValidNode(node)) continue;
-        pages[node.name || id] = sanitizeNode(node);
+          : nodeData;
+        if (!isValidNode(candidate)) continue;
+        pages[candidate.name || id] = sanitizeNode(candidate);
       }
     }
 
@@ -114,8 +115,8 @@ export class FigmaMcpAdapter implements FigmaDataAdapter {
 }
 
 function isWrappedNode(
-  data: { document: FigmaNode } | FigmaNode,
-): data is { document: FigmaNode } {
+  data: { document: FigmaNode | null } | FigmaNode,
+): data is { document: FigmaNode | null } {
   if (data == null || typeof data !== "object") return false;
   const record = data as Record<string, unknown>;
   return "document" in data && record.document != null && typeof record.document === "object";

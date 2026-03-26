@@ -74,7 +74,7 @@ describe("FigmaMcpAdapter", () => {
             id: "1:1",
             name: "Direct Node",
             type: "FRAME",
-          } as unknown as { document: FigmaNode },
+          },
         },
       };
 
@@ -228,7 +228,7 @@ describe("FigmaMcpAdapter", () => {
           "1:1": {
             document: { id: "1:1", name: "Valid", type: "FRAME" },
           },
-          "1:2": { document: null } as unknown as { document: FigmaNode },
+          "1:2": { document: null },
         },
       };
 
@@ -241,7 +241,7 @@ describe("FigmaMcpAdapter", () => {
     it("should treat non-wrapped nodes as direct FigmaNode", async () => {
       const response: McpFigmaFileResponse = {
         nodes: {
-          "1:1": { id: "1:1", name: "Direct", type: "FRAME" } as unknown as { document: FigmaNode },
+          "1:1": { id: "1:1", name: "Direct", type: "FRAME" },
         },
       };
 
