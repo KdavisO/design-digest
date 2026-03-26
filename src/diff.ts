@@ -2,8 +2,9 @@ import "dotenv/config";
 import { loadConfig } from "./config.js";
 import {
   fetchFile,
-  fetchNodes,
   fetchNodesChunked,
+  fetchFileProactive,
+  fetchNodesProactive,
   fetchVersions,
   checkVersionChanged,
   extractEditorsSince,
@@ -78,7 +79,10 @@ async function processFile(
     }
   }
 
-  // Step 2: Fetch current state from Figma
+  // Step 2: Fetch current state from Figma using proactive chunking
+  // Proactive strategy: fetch at depth=1 first, estimate complexity per page/node,
+  // and chunk large subtrees before hitting payload limits.
+  // This avoids the error-then-retry pattern and saves 1 API call per large file.
   let pages: Record<string, FigmaNode>;
 
   if (config.figmaWatchNodeIds.length > 0) {
@@ -86,26 +90,30 @@ async function processFile(
       `  Fetching specific nodes: ${config.figmaWatchNodeIds.join(", ")}`,
     );
     try {
-      // Try normal fetch first
-      const nodes = await fetchNodes(
+      const { nodes, chunkedNodes } = await fetchNodesProactive(
         config.figmaToken,
         fileKey,
         config.figmaWatchNodeIds,
         config.figmaNodeDepth,
+        config.figmaBatchSize,
       );
+      if (chunkedNodes.length > 0) {
+        console.log(`  Proactively chunked: ${chunkedNodes.join(", ")}`);
+      }
       pages = {};
       for (const [id, node] of Object.entries(nodes)) {
         pages[node.name || id] = sanitizeNode(node);
       }
     } catch (err) {
-      // Fall back to chunked fetch on payload size errors
+      // Safety net: fall back to chunked fetch on unexpected payload size errors
       if (isPayloadTooLargeError(err)) {
-        console.log("  Payload too large — switching to chunked fetch...");
+        console.log("  Payload too large (unexpected) — switching to chunked fetch...");
         const nodes = await fetchNodesChunked(
           config.figmaToken,
           fileKey,
           config.figmaWatchNodeIds,
           config.figmaNodeDepth,
+          config.figmaBatchSize,
         );
         pages = {};
         for (const [id, node] of Object.entries(nodes)) {
@@ -116,17 +124,26 @@ async function processFile(
       }
     }
   } else {
-    console.log(`  Fetching full file...`);
+    console.log(`  Fetching full file (proactive strategy)...`);
     try {
-      const file = await fetchFile(config.figmaToken, fileKey, config.figmaNodeDepth);
-      const targetPages = filterWatchTargets(file, config.figmaWatchPages);
+      const { pages: fetchedPages, chunkedPages } = await fetchFileProactive(
+        config.figmaToken,
+        fileKey,
+        config.figmaWatchPages,
+        config.figmaNodeDepth,
+        config.figmaBatchSize,
+      );
+      if (chunkedPages.length > 0) {
+        console.log(`  Proactively chunked pages: ${chunkedPages.join(", ")}`);
+      }
       pages = {};
-      for (const page of targetPages) {
-        pages[page.name] = sanitizeNode(page);
+      for (const [name, node] of Object.entries(fetchedPages)) {
+        pages[name] = sanitizeNode(node);
       }
     } catch (err) {
+      // Safety net: fall back to error-driven chunking
       if (isPayloadTooLargeError(err)) {
-        console.log("  Payload too large — fetching page list and chunking...");
+        console.log("  Payload too large (unexpected) — fetching page list and chunking...");
         const file = await fetchFile(config.figmaToken, fileKey, 1);
         const targetPages = filterWatchTargets(file, config.figmaWatchPages);
         const pageIds = targetPages.map((p) => p.id);
@@ -135,6 +152,7 @@ async function processFile(
           fileKey,
           pageIds,
           config.figmaNodeDepth,
+          config.figmaBatchSize,
         );
         pages = {};
         for (const [id, node] of Object.entries(nodes)) {
