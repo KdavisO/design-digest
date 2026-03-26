@@ -5,6 +5,8 @@ export interface PageSummaryResult {
   failedPages: string[];
 }
 
+const DEFAULT_CONCURRENCY = 3;
+
 /**
  * Generate AI summaries per page. Returns summaries and failed page names.
  * Each page's summary is generated independently; failures are isolated.
@@ -14,15 +16,17 @@ export async function generatePageSummaries(
   apiKey: string,
   changesByPage: Record<string, ChangeEntry[]>,
   generate: (apiKey: string, changes: ChangeEntry[]) => Promise<string> = generateSummary,
+  concurrency: number = DEFAULT_CONCURRENCY,
 ): Promise<PageSummaryResult> {
   const summaries = new Map<string, string>();
   const entries = Object.entries(changesByPage);
 
-  const settled = await Promise.allSettled(
-    entries.map(async ([pageName, pageChanges]) => {
+  const settled = await allSettledWithConcurrency(
+    entries.map(([pageName, pageChanges]) => async () => {
       const summary = await generate(apiKey, pageChanges);
       return { pageName, summary };
     }),
+    concurrency,
   );
 
   const failedPages: string[] = [];
@@ -84,6 +88,33 @@ Be concise and actionable. Respond in the same language as the node names.`,
   const block = message.content[0];
   if (block.type === "text") return block.text;
   return "Unable to generate summary.";
+}
+
+async function allSettledWithConcurrency<T>(
+  tasks: (() => Promise<T>)[],
+  concurrency: number,
+): Promise<PromiseSettledResult<T>[]> {
+  const results: PromiseSettledResult<T>[] = new Array(tasks.length);
+  let index = 0;
+
+  async function worker(): Promise<void> {
+    while (index < tasks.length) {
+      const i = index++;
+      try {
+        const value = await tasks[i]();
+        results[i] = { status: "fulfilled", value };
+      } catch (reason) {
+        results[i] = { status: "rejected", reason };
+      }
+    }
+  }
+
+  const workers = Array.from(
+    { length: Math.min(concurrency, tasks.length) },
+    () => worker(),
+  );
+  await Promise.all(workers);
+  return results;
 }
 
 function formatVal(value: unknown): string {

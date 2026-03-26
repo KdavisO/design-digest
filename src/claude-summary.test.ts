@@ -66,6 +66,32 @@ describe("generatePageSummaries", () => {
     ).rejects.toThrow("Failed to generate summaries for all pages");
   });
 
+  it("respects concurrency limit", async () => {
+    let running = 0;
+    let maxRunning = 0;
+
+    const mockGenerate = vi.fn().mockImplementation(async () => {
+      running++;
+      maxRunning = Math.max(maxRunning, running);
+      await new Promise((r) => setTimeout(r, 50));
+      running--;
+      return "summary";
+    });
+
+    const changesByPage: Record<string, ChangeEntry[]> = {};
+    for (let i = 0; i < 6; i++) {
+      changesByPage[`Page${i}`] = [
+        { pageName: `Page${i}`, nodeId: `${i}:1`, nodeName: "N", nodeType: "FRAME", kind: "added" },
+      ];
+    }
+
+    const { summaries, failedPages } = await generatePageSummaries("fake-key", changesByPage, mockGenerate, 2);
+    expect(summaries.size).toBe(6);
+    expect(failedPages).toEqual([]);
+    expect(maxRunning).toBeLessThanOrEqual(2);
+    expect(mockGenerate).toHaveBeenCalledTimes(6);
+  });
+
   it("returns empty result for empty input", async () => {
     const mockGenerate = vi.fn();
 
