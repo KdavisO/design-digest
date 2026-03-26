@@ -1,14 +1,80 @@
-# Figma MCP ヘッドレス環境対応トラッキング
+# Figma データ取得経路の整理
 
 ## 概要
 
-Figma MCP サーバーのヘッドレス環境（CI/CD）対応状況を追跡し、DesignDigest への統合可能性を評価する。
+DesignDigest における Figma データ取得経路の責務・制約・推奨利用シーンを整理する。
 
-関連 Issue: #62
+関連 Issue: #62, #73
+
+## 3経路の比較
+
+| 項目 | Figma REST API | figma-developer-mcp | Figma MCP（use_figma） |
+|------|---------------|---------------------|----------------------|
+| **コード** | `figma-client.ts` | `.mcp.json` で設定 | Claude Desktop/claude.ai 内蔵 |
+| **アダプタ** | `FigmaRestAdapter` | `FigmaMcpAdapter` で正規化 | `FigmaMcpAdapter` で正規化 |
+| **認証方式** | PAT（`FIGMA_TOKEN`） | PAT（`FIGMA_API_KEY`） | OAuth 2.0（ブラウザ認証） |
+| **ヘッドレス実行** | ✅ 可能 | ✅ 可能 | ❌ 不可（ブラウザ必須） |
+| **利用環境** | GitHub Actions / CLI / どこでも | Claude Code CLI | Claude Desktop / claude.ai |
+| **データ形式** | Figma REST API レスポンス | REST API ラッパー（実質同一） | MCP 独自形式（正規化が必要） |
+| **最適化** | プロアクティブチャンク分割、バージョン履歴チェック | なし（MCP が内部で処理） | なし（MCP が内部で処理） |
+| **レートリミット** | Figma API 標準 | Figma API 標準（PAT 経由） | MCP 独自（プラン別、日次上限あり） |
+| **独自機能** | バージョン履歴、編集者抽出 | — | Write-to-Canvas 等（将来） |
+
+## 利用シーン別の推奨経路
+
+### 1. GitHub Actions 定期実行（現行メイン）
+
+**推奨: Figma REST API**
+
+- `src/diff.ts` → `FigmaRestAdapter` → `figma-client.ts`
+- PAT 認証でヘッドレス実行可能
+- プロアクティブチャンク分割、バージョン履歴最適化済み
+- 他の経路は GitHub Actions では利用不可（MCP サーバーが不要）
+
+### 2. Claude Code CLI での手動デザインチェック（`/design-check`）
+
+**推奨: figma-developer-mcp**
+
+- `/design-check` コマンド → `get_figma_data` MCP ツール → `FigmaMcpAdapter` → `design-check.ts`
+- PAT 認証のため `.mcp.json` に設定するだけで利用可能
+- Claude Code CLI で MCP ツールとして直接呼び出せる
+- `use_figma` は Claude Code CLI では未接続のため利用不可
+
+### 3. Claude Desktop / claude.ai での利用
+
+**推奨: Figma MCP（use_figma）**
+
+- Anthropic 内蔵の `use_figma` ツールを使用
+- OAuth 認証（初回ブラウザ認証）
+- Claude Desktop / claude.ai 環境でのみ利用可能
+- `/design-check` コマンドの手順2で `use_figma` を指定して実行可能
+
+## アダプタの役割整理
+
+### `FigmaRestAdapter`
+
+- **責務**: Figma REST API を `FigmaDataAdapter` インターフェースでラップ
+- **利用場面**: GitHub Actions 定期実行（`diff.ts`）
+- **内部実装**: `figma-client.ts` の `fetchFileProactive()` / `fetchNodesProactive()` に委譲
+- **特徴**: プロアクティブチャンク分割、ペイロード超過時のフォールバック
+
+### `FigmaMcpAdapter`
+
+- **責務**: MCP ツール（`get_figma_data` / `use_figma`）のレスポンスを `FigmaDataAdapter` インターフェースに正規化
+- **利用場面**: Claude Code CLI / Claude Desktop での手動デザインチェック（`design-check.ts`）
+- **内部実装**: MCP レスポンス JSON をパースし、ノード構造の差異を吸収（`fromMcpResponse()`）
+- **特徴**: フルファイル / ノード指定の両形式に対応、不正レスポンスのバリデーション
+
+### 削除候補
+
+現時点で削除候補となる経路はない。3経路はそれぞれ異なる利用シーンをカバーしている:
+- REST API: 自動実行（CI/CD）
+- figma-developer-mcp: CLI での手動チェック
+- Figma MCP（use_figma）: Claude Desktop/claude.ai での利用
 
 ## 現在のステータス
 
-**判定: 採用見送り（2026-03-26 時点）**
+**Figma MCP サーバー: 採用見送り（CI/CD 用途）（2026-03-26 時点）**
 
 Figma MCP サーバーはオープンベータ段階（2026年3月24日開始）であり、ヘッドレス環境での自動実行に必要な要件を満たしていない。
 
