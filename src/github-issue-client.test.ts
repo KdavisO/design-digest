@@ -1,11 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
   formatGitHubIssueBody,
+  formatGitHubIssueComment,
   githubDefaultTitle,
   generateGitHubIssueTitle,
   fetchOpenIssues,
   findExistingGitHubIssue,
   createGitHubIssue,
+  addGitHubIssueComment,
 } from "./github-issue-client.js";
 import type { ChangeEntry } from "./diff-engine.js";
 import type { GitHubIssueConfig } from "./github-issue-client.js";
@@ -181,7 +183,7 @@ describe("fetchOpenIssues", () => {
 
 describe("findExistingGitHubIssue", () => {
   it("returns null when no matching issues", () => {
-    const result = findExistingGitHubIssue([], "abc123");
+    const result = findExistingGitHubIssue([], "[DesignDigest] abc123 node:1:2");
     expect(result).toBeNull();
   });
 
@@ -189,7 +191,7 @@ describe("findExistingGitHubIssue", () => {
     const issues = [
       { number: 1, title: "Unrelated", html_url: "url1", body: "No marker" as string | null },
     ];
-    const result = findExistingGitHubIssue(issues, "abc123");
+    const result = findExistingGitHubIssue(issues, "[DesignDigest] abc123 node:1:2");
     expect(result).toBeNull();
   });
 
@@ -197,20 +199,20 @@ describe("findExistingGitHubIssue", () => {
     const issues = [
       { number: 1, title: "Null body", html_url: "url1", body: null as string | null },
     ];
-    const result = findExistingGitHubIssue(issues, "abc123");
+    const result = findExistingGitHubIssue(issues, "[DesignDigest] abc123 node:1:2");
     expect(result).toBeNull();
   });
 
-  it("returns existing issue when marker found in body", () => {
+  it("returns existing issue when node marker found in body", () => {
     const issues = [
       {
         number: 42,
         title: "[DesignDigest] changes",
         html_url: "https://github.com/test/repo/issues/42",
-        body: "[DesignDigest] abc123\n\nSome description" as string | null,
+        body: "[DesignDigest] abc123 node:1:2\n\nSome description" as string | null,
       },
     ];
-    const result = findExistingGitHubIssue(issues, "abc123");
+    const result = findExistingGitHubIssue(issues, "[DesignDigest] abc123 node:1:2");
     expect(result).toEqual({
       number: 42,
       title: "[DesignDigest] changes",
@@ -218,16 +220,46 @@ describe("findExistingGitHubIssue", () => {
     });
   });
 
-  it("does not false-match on substring fileKeys", () => {
+  it("returns existing issue when page marker found in body", () => {
+    const issues = [
+      {
+        number: 43,
+        title: "[DesignDigest] page changes",
+        html_url: "https://github.com/test/repo/issues/43",
+        body: "[DesignDigest] abc123 page:Home\n\nSome description" as string | null,
+      },
+    ];
+    const result = findExistingGitHubIssue(issues, "[DesignDigest] abc123 page:Home");
+    expect(result).toEqual({
+      number: 43,
+      title: "[DesignDigest] page changes",
+      html_url: "https://github.com/test/repo/issues/43",
+    });
+  });
+
+  it("does not false-match on different node markers", () => {
     const issues = [
       {
         number: 10,
         title: "[DesignDigest] changes",
         html_url: "url10",
-        body: "[DesignDigest] abc123456\n\nDescription" as string | null,
+        body: "[DesignDigest] abc123 node:1:2\n\nDescription" as string | null,
       },
     ];
-    const result = findExistingGitHubIssue(issues, "abc123");
+    const result = findExistingGitHubIssue(issues, "[DesignDigest] abc123 node:1:3");
+    expect(result).toBeNull();
+  });
+
+  it("does not false-match node marker against page marker", () => {
+    const issues = [
+      {
+        number: 10,
+        title: "[DesignDigest] changes",
+        html_url: "url10",
+        body: "[DesignDigest] abc123 page:Home\n\nDescription" as string | null,
+      },
+    ];
+    const result = findExistingGitHubIssue(issues, "[DesignDigest] abc123 node:1:2");
     expect(result).toBeNull();
   });
 });
@@ -351,5 +383,74 @@ describe("generateGitHubIssueTitle", () => {
 
     const title = await generateGitHubIssueTitle("test-key", sampleChanges);
     expect(title).toBe(githubDefaultTitle(sampleChanges));
+  });
+});
+
+describe("formatGitHubIssueBody with options", () => {
+  it("uses custom marker when provided", () => {
+    const body = formatGitHubIssueBody("abc123", sampleChanges, undefined, {
+      marker: "[DesignDigest] abc123 node:1:2",
+    });
+    expect(body).toContain("[DesignDigest] abc123 node:1:2");
+    expect(body).not.toMatch(/^\[DesignDigest\] abc123\n/);
+  });
+
+  it("includes scope label when provided", () => {
+    const body = formatGitHubIssueBody("abc123", sampleChanges, undefined, {
+      marker: "[DesignDigest] abc123 node:1:2",
+      scopeLabel: "Node: HeaderTitle (TEXT)",
+    });
+    expect(body).toContain("**Scope:** Node: HeaderTitle (TEXT)");
+  });
+
+  it("uses default marker when options not provided", () => {
+    const body = formatGitHubIssueBody("abc123", sampleChanges);
+    expect(body).toMatch(/^\[DesignDigest\] abc123\n/);
+  });
+});
+
+describe("formatGitHubIssueComment", () => {
+  it("formats comment with change details", () => {
+    const comment = formatGitHubIssueComment(sampleChanges);
+    expect(comment).toContain("3 new change(s) detected");
+    expect(comment).toContain("### Home");
+    expect(comment).toContain("### Settings");
+    expect(comment).toContain("**HeaderTitle**");
+  });
+
+  it("includes AI summary when provided", () => {
+    const comment = formatGitHubIssueComment(sampleChanges, "AI summary here");
+    expect(comment).toContain("## AI Summary");
+    expect(comment).toContain("AI summary here");
+  });
+});
+
+describe("addGitHubIssueComment", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("adds a comment to an issue", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(JSON.stringify({ id: 1 }), { status: 201 }),
+    );
+
+    await addGitHubIssueComment(mockConfig, 42, "Comment body");
+
+    expect(fetchSpy).toHaveBeenCalledOnce();
+    const url = fetchSpy.mock.calls[0][0] as string;
+    expect(url).toContain("/issues/42/comments");
+    const body = JSON.parse(fetchSpy.mock.calls[0][1]?.body as string);
+    expect(body.body).toBe("Comment body");
+  });
+
+  it("throws on API error", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response("Not Found", { status: 404, statusText: "Not Found" }),
+    );
+
+    await expect(
+      addGitHubIssueComment(mockConfig, 999, "Comment"),
+    ).rejects.toThrow("GitHub comment creation failed: 404 Not Found");
   });
 });

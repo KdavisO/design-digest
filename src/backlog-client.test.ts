@@ -1,9 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
   formatBacklogDescription,
+  formatBacklogComment,
   defaultTitle,
   findExistingIssue,
   createBacklogIssue,
+  addBacklogComment,
 } from "./backlog-client.js";
 import type { ChangeEntry } from "./diff-engine.js";
 import type { BacklogConfig } from "./backlog-client.js";
@@ -135,23 +137,34 @@ describe("findExistingIssue", () => {
       new Response(JSON.stringify([]), { status: 200 }),
     );
 
-    const result = await findExistingIssue(mockConfig, "abc123");
+    const result = await findExistingIssue(mockConfig, "[DesignDigest] abc123 node:1:2");
     expect(result).toBeNull();
   });
 
-  it("returns existing issue when found", async () => {
+  it("returns existing issue when found with node marker", async () => {
     const mockIssue = {
       id: 1,
       issueKey: "TEST-1",
-      summary: "[DesignDigest] abc123 changes",
-      description: "test description",
+      summary: "[DesignDigest] changes",
+      description: "[DesignDigest] abc123 node:1:2\n\ntest description",
     };
     vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
       new Response(JSON.stringify([mockIssue]), { status: 200 }),
     );
 
-    const result = await findExistingIssue(mockConfig, "abc123");
+    const result = await findExistingIssue(mockConfig, "[DesignDigest] abc123 node:1:2");
     expect(result).toEqual(mockIssue);
+  });
+
+  it("passes full marker as keyword to API", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(JSON.stringify([]), { status: 200 }),
+    );
+
+    await findExistingIssue(mockConfig, "[DesignDigest] abc123 page:Home");
+
+    const url = fetchSpy.mock.calls[0][0] as string;
+    expect(url).toContain("keyword=%5BDesignDigest%5D+abc123+page%3AHome");
   });
 
   it("throws on API error", async () => {
@@ -159,7 +172,7 @@ describe("findExistingIssue", () => {
       new Response("Unauthorized", { status: 401, statusText: "Unauthorized" }),
     );
 
-    await expect(findExistingIssue(mockConfig, "abc123")).rejects.toThrow(
+    await expect(findExistingIssue(mockConfig, "[DesignDigest] abc123 node:1:2")).rejects.toThrow(
       "Backlog API search failed: 401 Unauthorized",
     );
   });
@@ -224,5 +237,72 @@ describe("createBacklogIssue", () => {
     await expect(
       createBacklogIssue(mockConfig, "Test", "Desc"),
     ).rejects.toThrow("Backlog API issue creation failed: 400 Bad Request");
+  });
+});
+
+describe("formatBacklogDescription with options", () => {
+  it("uses custom marker when provided", () => {
+    const desc = formatBacklogDescription("abc123", sampleChanges, undefined, {
+      marker: "[DesignDigest] abc123 node:1:2",
+    });
+    expect(desc).toContain("[DesignDigest] abc123 node:1:2");
+  });
+
+  it("includes scope label when provided", () => {
+    const desc = formatBacklogDescription("abc123", sampleChanges, undefined, {
+      marker: "[DesignDigest] abc123 node:1:2",
+      scopeLabel: "Node: HeaderTitle (TEXT)",
+    });
+    expect(desc).toContain("Scope: Node: HeaderTitle (TEXT)");
+  });
+
+  it("uses default marker when options not provided", () => {
+    const desc = formatBacklogDescription("abc123", sampleChanges);
+    expect(desc).toMatch(/^\[DesignDigest\] abc123\n/);
+  });
+});
+
+describe("formatBacklogComment", () => {
+  it("formats comment with change details", () => {
+    const comment = formatBacklogComment(sampleChanges);
+    expect(comment).toContain("3 new change(s) detected");
+    expect(comment).toContain("### Home");
+    expect(comment).toContain("### Settings");
+  });
+
+  it("includes AI summary when provided", () => {
+    const comment = formatBacklogComment(sampleChanges, "AI summary");
+    expect(comment).toContain("## AI Summary");
+    expect(comment).toContain("AI summary");
+  });
+});
+
+describe("addBacklogComment", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("adds a comment to an issue", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(JSON.stringify({ id: 1 }), { status: 201 }),
+    );
+
+    await addBacklogComment(mockConfig, "TEST-1", "Comment body");
+
+    expect(fetchSpy).toHaveBeenCalledOnce();
+    const url = fetchSpy.mock.calls[0][0] as string;
+    expect(url).toContain("/issues/TEST-1/comments");
+    const body = fetchSpy.mock.calls[0][1]?.body as URLSearchParams;
+    expect(body.get("content")).toBe("Comment body");
+  });
+
+  it("throws on API error", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response("Not Found", { status: 404, statusText: "Not Found" }),
+    );
+
+    await expect(
+      addBacklogComment(mockConfig, "TEST-999", "Comment"),
+    ).rejects.toThrow("Backlog API comment creation failed: 404 Not Found");
   });
 });
