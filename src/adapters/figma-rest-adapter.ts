@@ -1,9 +1,12 @@
-import type { FigmaNode } from "../figma-client.js";
+import type { FigmaNode, FigmaVersion, FigmaUser } from "../figma-client.js";
 import {
   fetchFileProactive,
   fetchNodesProactive,
   fetchNodesChunked,
   fetchFile,
+  fetchVersions,
+  checkVersionChanged as checkVersionChangedFn,
+  extractEditorsSince as extractEditorsSinceFn,
   filterWatchTargets,
   sanitizeNode,
 } from "../figma-client.js";
@@ -74,6 +77,30 @@ export class FigmaRestAdapter implements FigmaDataAdapter {
       }
       throw err;
     }
+  }
+
+  /**
+   * Check if a file's version has changed since the given version ID.
+   */
+  async checkVersionChanged(
+    fileKey: string,
+    lastVersionId: string | undefined,
+  ): Promise<{ changed: boolean; latestVersionId: string | undefined }> {
+    return checkVersionChangedFn(this.token, fileKey, lastVersionId);
+  }
+
+  /**
+   * Fetch version history for a file.
+   */
+  async fetchVersions(fileKey: string): Promise<FigmaVersion[]> {
+    return fetchVersions(this.token, fileKey);
+  }
+
+  /**
+   * Extract unique editors from version history since a given timestamp.
+   */
+  extractEditorsSince(versions: FigmaVersion[], sinceTimestamp: string): FigmaUser[] {
+    return extractEditorsSinceFn(versions, sinceTimestamp);
   }
 
   private async fetchByPages(

@@ -1,16 +1,6 @@
 import "dotenv/config";
 import { loadConfig } from "./config.js";
-import {
-  fetchFile,
-  fetchNodesChunked,
-  fetchFileProactive,
-  fetchNodesProactive,
-  fetchVersions,
-  checkVersionChanged,
-  extractEditorsSince,
-  filterWatchTargets,
-  sanitizeNode,
-} from "./figma-client.js";
+import { FigmaRestAdapter } from "./adapters/figma-rest-adapter.js";
 import type { FigmaUser } from "./figma-client.js";
 import { loadSnapshot, saveSnapshot } from "./snapshot.js";
 import {
@@ -45,11 +35,11 @@ import {
   defaultTitle,
 } from "./backlog-client.js";
 import type { BacklogConfig } from "./backlog-client.js";
-import type { FigmaNode } from "./figma-client.js";
 import type { ChangeEntry } from "./diff-engine.js";
 import type { Config } from "./config.js";
 
 async function processFile(
+  adapter: FigmaRestAdapter,
   config: Config,
   fileKey: string,
 ): Promise<{ fileKey: string; changes: ChangeEntry[]; editors: FigmaUser[]; baselineCreated: boolean }> {
@@ -62,8 +52,7 @@ async function processFile(
   if (previous?.versionId) {
     try {
       console.log("  Checking version history...");
-      const versionCheck = await checkVersionChanged(
-        config.figmaToken,
+      const versionCheck = await adapter.checkVersionChanged(
         fileKey,
         previous.versionId,
       );
@@ -79,99 +68,31 @@ async function processFile(
     }
   }
 
-  // Step 2: Fetch current state from Figma using proactive chunking
-  // Proactive strategy: always fetch at depth=1 first, estimate complexity per page/node,
-  // and chunk large subtrees before hitting payload limits.
-  // For large files, this avoids the error-then-retry pattern and typically saves ~1 API call
-  // compared to the previous approach. For small/simple files, this proactively adds +1 API call
-  // (e.g. 2 calls instead of 1), which is an intentional rate-limit / cost tradeoff.
-  let pages: Record<string, FigmaNode>;
+  // Step 2: Fetch current state from Figma via FigmaRestAdapter
+  // The adapter handles proactive chunking, payload-too-large fallback, and sanitization.
+  const fetchOptions = {
+    watchPages: config.figmaWatchPages,
+    watchNodeIds: config.figmaWatchNodeIds,
+    depth: config.figmaNodeDepth,
+    batchSize: config.figmaBatchSize,
+  };
 
   if (config.figmaWatchNodeIds.length > 0) {
     console.log(
       `  Fetching specific nodes: ${config.figmaWatchNodeIds.join(", ")}`,
     );
-    try {
-      const { nodes, chunkedNodes } = await fetchNodesProactive(
-        config.figmaToken,
-        fileKey,
-        config.figmaWatchNodeIds,
-        config.figmaNodeDepth,
-        config.figmaBatchSize,
-      );
-      if (chunkedNodes.length > 0) {
-        console.log(`  Proactively chunked: ${chunkedNodes.join(", ")}`);
-      }
-      pages = {};
-      for (const [id, node] of Object.entries(nodes)) {
-        pages[node.name || id] = sanitizeNode(node);
-      }
-    } catch (err) {
-      // Safety net: fall back to chunked fetch on unexpected payload size errors
-      if (isPayloadTooLargeError(err)) {
-        console.log("  Payload too large (unexpected) — switching to chunked fetch...");
-        const nodes = await fetchNodesChunked(
-          config.figmaToken,
-          fileKey,
-          config.figmaWatchNodeIds,
-          config.figmaNodeDepth,
-          config.figmaBatchSize,
-        );
-        pages = {};
-        for (const [id, node] of Object.entries(nodes)) {
-          pages[node.name || id] = sanitizeNode(node);
-        }
-      } else {
-        throw err;
-      }
-    }
   } else {
     console.log(`  Fetching full file (proactive strategy)...`);
-    try {
-      const { pages: fetchedPages, chunkedPages } = await fetchFileProactive(
-        config.figmaToken,
-        fileKey,
-        config.figmaWatchPages,
-        config.figmaNodeDepth,
-        config.figmaBatchSize,
-      );
-      if (chunkedPages.length > 0) {
-        console.log(`  Proactively chunked pages: ${chunkedPages.join(", ")}`);
-      }
-      pages = {};
-      for (const [name, node] of Object.entries(fetchedPages)) {
-        pages[name] = sanitizeNode(node);
-      }
-    } catch (err) {
-      // Safety net: fall back to error-driven chunking
-      if (isPayloadTooLargeError(err)) {
-        console.log("  Payload too large (unexpected) — fetching page list and chunking...");
-        const file = await fetchFile(config.figmaToken, fileKey, 1);
-        const targetPages = filterWatchTargets(file, config.figmaWatchPages);
-        const pageIds = targetPages.map((p) => p.id);
-        const nodes = await fetchNodesChunked(
-          config.figmaToken,
-          fileKey,
-          pageIds,
-          config.figmaNodeDepth,
-          config.figmaBatchSize,
-        );
-        pages = {};
-        for (const [id, node] of Object.entries(nodes)) {
-          pages[node.name || id] = sanitizeNode(node);
-        }
-      } else {
-        throw err;
-      }
-    }
   }
+
+  const pages = await adapter.fetchPages(fileKey, fetchOptions);
 
   console.log(`  Fetched ${Object.keys(pages).length} page(s)`);
 
   // Fetch latest version ID if we didn't already attempt it
   if (!versionCheckAttempted) {
     try {
-      const versions = await fetchVersions(config.figmaToken, fileKey);
+      const versions = await adapter.fetchVersions(fileKey);
       if (versions.length > 0) latestVersionId = versions[0].id;
     } catch {
       // Non-critical — version ID is optional for snapshot
@@ -200,8 +121,8 @@ async function processFile(
   if (changes.length > 0) {
     try {
       console.log("  Fetching version history...");
-      const versions = await fetchVersions(config.figmaToken, fileKey);
-      editors = extractEditorsSince(versions, previous.timestamp);
+      const versions = await adapter.fetchVersions(fileKey);
+      editors = adapter.extractEditorsSince(versions, previous.timestamp);
       if (editors.length > 0) {
         console.log(`  Editors: ${editors.map((e) => e.handle).join(", ")}`);
       }
@@ -220,13 +141,14 @@ async function main(): Promise<void> {
   console.log("DesignDigest: Starting diff check...");
 
   const config = loadConfig();
+  const adapter = new FigmaRestAdapter(config.figmaToken);
   const allChanges: { fileKey: string; changes: ChangeEntry[]; editors: FigmaUser[]; baselineCreated: boolean }[] = [];
 
   for (const fileKey of config.figmaFileKeys) {
     console.log(
       `\n--- File: ${fileKey} (${config.figmaFileKeys.indexOf(fileKey) + 1}/${config.figmaFileKeys.length}) ---`,
     );
-    const result = await processFile(config, fileKey);
+    const result = await processFile(adapter, config, fileKey);
     allChanges.push(result);
   }
 
@@ -577,15 +499,6 @@ async function main(): Promise<void> {
   }
 
   console.log("Done.");
-}
-
-function isPayloadTooLargeError(err: unknown): boolean {
-  const message = (err instanceof Error ? err.message : String(err)).toLowerCase();
-  return (
-    message.includes("request too large") ||
-    message.includes("try a smaller request") ||
-    message.includes("invalid string length")
-  );
 }
 
 main().catch(async (err) => {
