@@ -651,12 +651,11 @@ describe("formatSlackBlocks", () => {
       },
     ];
     const blocks = formatSlackBlocks("abc123", changes);
-    // Should have exactly one divider (between pages, plus the one after header)
-    // but the last block should NOT be a divider
+    // Last block should NOT be a divider (dividers only appear between pages and after the header)
     expect(blocks[blocks.length - 1].type).not.toBe("divider");
-    // There should be at least one divider (between header section and pages, and between pages)
+    // Should have dividers: one after header section, one between the two pages
     const dividers = blocks.filter((b) => b.type === "divider");
-    expect(dividers.length).toBeGreaterThan(0);
+    expect(dividers).toHaveLength(2);
   });
 
   it("aggregates when same node has more than 5 changes", () => {
