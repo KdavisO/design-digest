@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { detectChanges, formatConsoleReport, formatSlackReport, formatSlackBlocks, nodeUrl, convertMarkdownToSlackMrkdwn } from "./diff-engine.js";
+import { detectChanges, formatConsoleReport, formatSlackReport, formatSlackBlocks, nodeUrl, convertMarkdownToSlackMrkdwn, groupChangesForIssues } from "./diff-engine.js";
 import type { FigmaNode, FigmaUser } from "./figma-client.js";
 
 function makeNode(overrides: Partial<FigmaNode> & { id: string; name: string }): FigmaNode {
@@ -1005,5 +1005,71 @@ describe("formatSlackBlocks with pageSummaries", () => {
       (b) => b.type === "section" && b.text?.text?.startsWith("💡"),
     );
     expect(summaryBlocks).toHaveLength(0);
+  });
+});
+
+describe("groupChangesForIssues", () => {
+  it("groups by node when unique nodes <= 10", () => {
+    const changes = [
+      { pageName: "Home", nodeId: "1:1", nodeName: "Button", nodeType: "FRAME", kind: "modified" as const, property: "fills" },
+      { pageName: "Home", nodeId: "1:1", nodeName: "Button", nodeType: "FRAME", kind: "modified" as const, property: "opacity" },
+      { pageName: "Home", nodeId: "1:2", nodeName: "Header", nodeType: "TEXT", kind: "added" as const },
+    ];
+
+    const units = groupChangesForIssues("fileKey1", changes);
+    expect(units).toHaveLength(2);
+    expect(units[0].scope).toBe("node");
+    expect(units[0].marker).toBe("[DesignDigest] fileKey1 node:1:1");
+    expect(units[0].label).toBe("Button (FRAME)");
+    expect(units[0].changes).toHaveLength(2);
+    expect(units[1].marker).toBe("[DesignDigest] fileKey1 node:1:2");
+    expect(units[1].changes).toHaveLength(1);
+  });
+
+  it("falls back to page grouping when unique nodes > 10", () => {
+    const changes = Array.from({ length: 11 }, (_, i) => ({
+      pageName: i < 6 ? "Home" : "Settings",
+      nodeId: `1:${i}`,
+      nodeName: `Node${i}`,
+      nodeType: "FRAME",
+      kind: "modified" as const,
+      property: "fills",
+    }));
+
+    const units = groupChangesForIssues("fileKey1", changes);
+    expect(units).toHaveLength(2);
+    expect(units[0].scope).toBe("page");
+    expect(units[0].marker).toBe("[DesignDigest] fileKey1 page:Home");
+    expect(units[0].label).toBe("Home");
+    expect(units[0].changes).toHaveLength(6);
+    expect(units[1].marker).toBe("[DesignDigest] fileKey1 page:Settings");
+    expect(units[1].changes).toHaveLength(5);
+  });
+
+  it("groups exactly 10 nodes as node-level", () => {
+    const changes = Array.from({ length: 10 }, (_, i) => ({
+      pageName: "Home",
+      nodeId: `1:${i}`,
+      nodeName: `Node${i}`,
+      nodeType: "FRAME",
+      kind: "added" as const,
+    }));
+
+    const units = groupChangesForIssues("fileKey1", changes);
+    expect(units).toHaveLength(10);
+    expect(units[0].scope).toBe("node");
+  });
+
+  it("combines multiple property changes of the same node into one unit", () => {
+    const changes = [
+      { pageName: "Home", nodeId: "1:1", nodeName: "Text", nodeType: "TEXT", kind: "modified" as const, property: "fontSize" },
+      { pageName: "Home", nodeId: "1:1", nodeName: "Text", nodeType: "TEXT", kind: "modified" as const, property: "fontFamily" },
+      { pageName: "Home", nodeId: "1:1", nodeName: "Text", nodeType: "TEXT", kind: "modified" as const, property: "fills" },
+    ];
+
+    const units = groupChangesForIssues("fileKey1", changes);
+    expect(units).toHaveLength(1);
+    expect(units[0].changes).toHaveLength(3);
+    expect(units[0].marker).toBe("[DesignDigest] fileKey1 node:1:1");
   });
 });

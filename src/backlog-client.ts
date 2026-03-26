@@ -28,6 +28,7 @@ interface BacklogIssueListItem {
   issueKey: string;
   summary: string;
   description: string;
+  status?: { id: number; name: string };
 }
 
 function baseUrl(spaceId: string): string {
@@ -35,18 +36,22 @@ function baseUrl(spaceId: string): string {
 }
 
 /**
- * Search for existing issues that match the given Figma file key
+ * Search for existing issues that match the given marker string
  * to prevent duplicate issue creation.
  */
 export async function findExistingIssue(
   config: BacklogConfig,
-  fileKey: string,
+  marker: string,
 ): Promise<BacklogIssue | null> {
+  // Backlog closed status ID is 4. Custom statuses may exist beyond 1-3,
+  // so we fetch without status filter and exclude closed issues client-side.
+  const CLOSED_STATUS_ID = 4;
+
   const params = new URLSearchParams({
     apiKey: config.apiKey,
     "projectId[]": config.projectId,
-    keyword: `[DesignDigest] ${fileKey}`,
-    count: "1",
+    keyword: marker,
+    count: "20",
     sort: "created",
     order: "desc",
   });
@@ -64,12 +69,23 @@ export async function findExistingIssue(
   const issues: BacklogIssueListItem[] = await response.json();
   if (issues.length === 0) return null;
 
-  const issue = issues[0];
+  // Validate marker exact line match in description to prevent partial matches
+  // (e.g., "node:1:2" matching "node:1:23"), and exclude closed issues.
+  const escapedMarker = marker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const markerRegex = new RegExp(`(^|\\r?\\n)${escapedMarker}(\\r?\\n|$)`);
+  const match = issues.find(
+    (issue) =>
+      issue.description != null &&
+      markerRegex.test(issue.description) &&
+      issue.status?.id !== CLOSED_STATUS_ID,
+  );
+  if (!match) return null;
+
   return {
-    id: issue.id,
-    issueKey: issue.issueKey,
-    summary: issue.summary,
-    description: issue.description,
+    id: match.id,
+    issueKey: match.issueKey,
+    summary: match.summary,
+    description: match.description,
   };
 }
 
@@ -123,28 +139,11 @@ export async function createBacklogIssue(
 }
 
 /**
- * Format change entries into a Backlog issue description.
+ * Render changes grouped by page into plain text lines.
+ * Shared by formatBacklogDescription and formatBacklogComment.
  */
-export function formatBacklogDescription(
-  fileKey: string,
-  changes: ChangeEntry[],
-  aiSummary?: string,
-): string {
-  const figmaUrl = `https://www.figma.com/design/${fileKey}`;
-  const lines: string[] = [
-    `[DesignDigest] ${fileKey}`,
-    "",
-    `Figma file: ${figmaUrl}`,
-    `${changes.length} change(s) detected`,
-    "",
-  ];
-
-  if (aiSummary) {
-    lines.push("## AI Summary", "", aiSummary, "");
-  }
-
-  lines.push("## Changes", "");
-
+function renderBacklogChangeLines(changes: ChangeEntry[]): string[] {
+  const lines: string[] = [];
   const grouped: Record<string, ChangeEntry[]> = {};
   for (const change of changes) {
     (grouped[change.pageName] ??= []).push(change);
@@ -161,21 +160,98 @@ export function formatBacklogDescription(
           lines.push(`- Deleted: ${change.nodeName} (${change.nodeType})`);
           break;
         case "renamed":
-          lines.push(
-            `- Renamed: ${String(change.oldValue)} → ${String(change.newValue)}`,
-          );
+          lines.push(`- Renamed: ${String(change.oldValue)} → ${String(change.newValue)}`);
           break;
         case "modified":
-          lines.push(
-            `- Modified: ${change.nodeName}.${change.property ?? ""}: ${formatVal(change.oldValue)} → ${formatVal(change.newValue)}`,
-          );
+          lines.push(`- Modified: ${change.nodeName}${change.property ? `.${change.property}` : ""}: ${formatVal(change.oldValue)} → ${formatVal(change.newValue)}`);
           break;
       }
     }
     lines.push("");
   }
+  return lines;
+}
+
+/**
+ * Format change entries into a Backlog issue description.
+ * @param marker - Marker string for duplicate detection (defaults to `[DesignDigest] {fileKey}`)
+ * @param scopeLabel - Optional scope label (e.g., "Node: Button (FRAME)" or "Page: Home")
+ */
+export function formatBacklogDescription(
+  fileKey: string,
+  changes: ChangeEntry[],
+  aiSummary?: string,
+  options?: { marker?: string; scopeLabel?: string },
+): string {
+  const figmaUrl = `https://www.figma.com/design/${fileKey}`;
+  const marker = options?.marker ?? `[DesignDigest] ${fileKey}`;
+  const lines: string[] = [
+    marker,
+    "",
+    `Figma file: ${figmaUrl}`,
+  ];
+
+  if (options?.scopeLabel) {
+    lines.push(`Scope: ${options.scopeLabel}`);
+  }
+
+  lines.push(`${changes.length} change(s) detected`, "");
+
+  if (aiSummary) {
+    lines.push("## AI Summary", "", aiSummary, "");
+  }
+
+  lines.push("## Changes", "");
+  lines.push(...renderBacklogChangeLines(changes));
 
   return lines.join("\n");
+}
+
+/**
+ * Format a comment body for appending updated changes to an existing Backlog issue.
+ */
+export function formatBacklogComment(
+  changes: ChangeEntry[],
+  aiSummary?: string,
+): string {
+  const lines: string[] = [
+    `${changes.length} new change(s) detected (${new Date().toISOString().split("T")[0]})`,
+    "",
+  ];
+
+  if (aiSummary) {
+    lines.push("## AI Summary", "", aiSummary, "");
+  }
+
+  lines.push("## Changes", "");
+  lines.push(...renderBacklogChangeLines(changes));
+
+  return lines.join("\n");
+}
+
+/**
+ * Add a comment to an existing Backlog issue.
+ */
+export async function addBacklogComment(
+  config: BacklogConfig,
+  issueIdOrKey: string,
+  content: string,
+): Promise<void> {
+  const params = new URLSearchParams({ apiKey: config.apiKey });
+  const url = `${baseUrl(config.spaceId)}/issues/${issueIdOrKey}/comments?${params}`;
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ content }),
+  });
+
+  if (!response.ok) {
+    const responseBody = await response.text().catch(() => "");
+    throw new Error(
+      `Backlog API comment creation failed: ${response.status} ${response.statusText}${responseBody ? ` - ${responseBody}` : ""}`,
+    );
+  }
 }
 
 function formatVal(value: unknown): string {

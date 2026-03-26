@@ -22,6 +22,21 @@ export interface ChangeReport {
   summary: string;
 }
 
+/**
+ * A unit of changes to be filed as a single issue.
+ * Either scoped to a single node or a single page (fallback).
+ */
+export interface IssueUnit {
+  /** Marker string embedded in issue body for duplicate detection */
+  marker: string;
+  /** Human-readable label for this unit */
+  label: string;
+  /** Changes belonging to this unit */
+  changes: ChangeEntry[];
+  /** Scope type: "node" or "page" */
+  scope: "node" | "page";
+}
+
 const PROPERTY_LABELS: Record<string, string> = {
   fills: "塗り",
   strokes: "線",
@@ -577,6 +592,42 @@ export function groupByPage(changes: ChangeEntry[]): Record<string, ChangeEntry[
     (grouped[change.pageName] ??= []).push(change);
   }
   return grouped;
+}
+
+/**
+ * Group changes into IssueUnits for issue creation.
+ * - When unique changed nodes <= 10: one issue per node (same node's property changes combined)
+ * - When unique changed nodes > 10: fallback to one issue per page
+ */
+export function groupChangesForIssues(fileKey: string, changes: ChangeEntry[]): IssueUnit[] {
+  const NODE_THRESHOLD = 10;
+  const uniqueNodeIds = new Set(changes.map((c) => c.nodeId));
+
+  if (uniqueNodeIds.size <= NODE_THRESHOLD) {
+    // Node-level grouping
+    const byNode: Record<string, ChangeEntry[]> = {};
+    for (const c of changes) {
+      (byNode[c.nodeId] ??= []).push(c);
+    }
+    return Object.entries(byNode).map(([nodeId, nodeChanges]) => {
+      const first = nodeChanges[0];
+      return {
+        marker: `[DesignDigest] ${fileKey} node:${nodeId}`,
+        label: `${first.nodeName} (${first.nodeType})`,
+        changes: nodeChanges,
+        scope: "node" as const,
+      };
+    });
+  } else {
+    // Page-level fallback
+    const byPage = groupByPage(changes);
+    return Object.entries(byPage).map(([pageName, pageChanges]) => ({
+      marker: `[DesignDigest] ${fileKey} page:${encodeURIComponent(pageName)}`,
+      label: pageName,
+      changes: pageChanges,
+      scope: "page" as const,
+    }));
+  }
 }
 
 function formatSummaryCounts(changes: ChangeEntry[]): string {
