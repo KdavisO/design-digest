@@ -83,7 +83,19 @@ export class FigmaMcpAdapter implements FigmaDataAdapter {
     _fileKey: string,
     options?: FetchPagesOptions,
   ): Promise<Record<string, FigmaNode>> {
+    const watchNodeIds = options?.watchNodeIds ?? [];
     const watchPages = options?.watchPages ?? [];
+
+    // watchNodeIds takes priority: filter by node ID
+    if (watchNodeIds.length > 0) {
+      const filtered: Record<string, FigmaNode> = {};
+      for (const [name, node] of Object.entries(this.data)) {
+        if (watchNodeIds.includes(node.id)) {
+          filtered[name] = node;
+        }
+      }
+      return filtered;
+    }
 
     if (watchPages.length === 0) {
       return { ...this.data };
@@ -103,5 +115,7 @@ export class FigmaMcpAdapter implements FigmaDataAdapter {
 function isWrappedNode(
   data: { document: FigmaNode } | FigmaNode,
 ): data is { document: FigmaNode } {
-  return "document" in data && typeof (data as Record<string, unknown>).document === "object";
+  if (data == null || typeof data !== "object") return false;
+  const record = data as Record<string, unknown>;
+  return "document" in data && record.document != null && typeof record.document === "object";
 }

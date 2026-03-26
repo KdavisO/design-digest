@@ -116,8 +116,9 @@ async function main(): Promise<void> {
   }
 
   // 6. Generate AI summaries if configured
+  const claudeSummaryEnabled = process.env.CLAUDE_SUMMARY_ENABLED === "true";
   let pageSummaries: Map<string, string> | undefined;
-  if (anthropicApiKey) {
+  if (anthropicApiKey && claudeSummaryEnabled && !dryRun && slackWebhookUrl) {
     try {
       console.log("\nGenerating AI summaries...");
       const changesByPage = groupByPage(changes);
