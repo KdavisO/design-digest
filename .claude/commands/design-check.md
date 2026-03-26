@@ -4,8 +4,8 @@ Figma MCP 経由でデザイン差分検出を実行する。
 
 1. **Figma ファイルキーを確認**: 環境変数 `FIGMA_FILE_KEY` またはユーザー指定のファイルキーを使用する
 
-2. **Figma MCP でファイルデータを取得**: Figma MCP の `get_file` ツールを使ってファイルのノードツリーを取得する
-   - `get_file` ツールに fileKey を渡して呼び出す
+2. **Figma MCP でファイルデータを取得**: Figma MCP の `use_figma` ツールを使ってファイルのノードツリーを取得する
+   - `use_figma` ツールに fileKey を含むリクエストを渡して呼び出す
    - レスポンスの JSON 全体を一時ファイルに保存する
 
 3. **一時ファイルに保存**: MCP レスポンスを `/tmp/design-digest-mcp-response.json` に書き出す

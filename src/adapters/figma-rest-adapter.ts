@@ -101,12 +101,17 @@ export class FigmaRestAdapter implements FigmaDataAdapter {
         const file = await fetchFile(this.token, fileKey, 1);
         const targetPages = filterWatchTargets(file, watchPages);
         const pageIds = targetPages.map((p) => p.id);
+        const precomputedShallow: Record<string, FigmaNode> = {};
+        for (const page of targetPages) {
+          precomputedShallow[page.id] = page;
+        }
         const nodes = await fetchNodesChunked(
           this.token,
           fileKey,
           pageIds,
           depth,
           batchSize,
+          precomputedShallow,
         );
         const pages: Record<string, FigmaNode> = {};
         for (const [id, node] of Object.entries(nodes)) {

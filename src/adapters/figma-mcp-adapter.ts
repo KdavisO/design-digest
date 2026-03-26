@@ -3,7 +3,7 @@ import { sanitizeNode } from "../figma-client.js";
 import type { FigmaDataAdapter, FetchPagesOptions } from "./figma-data-adapter.js";
 
 /**
- * MCP response structure from Figma MCP's `get_file` tool.
+ * MCP response structure from Figma MCP's `use_figma` tool.
  *
  * The Figma MCP server returns file data in a structure similar to the REST API
  * but accessed through the MCP protocol. This adapter normalizes the response
@@ -29,7 +29,7 @@ export interface McpFigmaFileResponse {
  * expected by the diff engine.
  *
  * Usage flow:
- * 1. Claude calls Figma MCP's `get_file` or similar tool
+ * 1. Claude calls Figma MCP's `use_figma` tool
  * 2. The response JSON is passed to FigmaMcpAdapter.fromMcpResponse()
  * 3. The adapter normalizes and sanitizes the data
  * 4. fetchPages() returns data compatible with the diff engine
