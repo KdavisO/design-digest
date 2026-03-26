@@ -135,24 +135,32 @@ This is useful when monitoring large pages/frames. The trade-off is that changes
 
 Set `ANTHROPIC_API_KEY` and `CLAUDE_SUMMARY_ENABLED=true`. The AI will summarize changes with implementation impact analysis for frontend engineers.
 
+#### Per-page summary generation
+
+AI summaries are generated **per page** — each Figma page with changes triggers a separate Claude API call. This means:
+
+- **API calls per run** = number of pages with changes (across all monitored files)
+- **Fault isolation** — if one page's summary fails, other pages still get their summaries
+- **Parallel execution (per file)** — for each Figma file, all changed pages in that file are requested concurrently via `Promise.allSettled`, while files themselves are processed sequentially
+
 #### Claude API cost estimate
 
-DesignDigest uses **Claude Sonnet 4** (`claude-sonnet-4-20250514`) to generate change summaries. Each workflow execution makes a single Claude API call that summarizes changes across all monitored Figma files, with very low token usage.
+DesignDigest uses **Claude Sonnet 4** (`claude-sonnet-4-20250514`) to generate change summaries. Each page with changes triggers one API call, so the total number of calls per run depends on how many pages have changes.
 
-| Scenario | Input tokens | Output tokens |
-|---|---|---|
-| ~10 total changes across watched files | ~300–500 | ~200–400 |
-| ~50 total changes across watched files | ~1,000–1,500 | ~400–800 |
+| Scenario | API calls | Input tokens (per call) | Output tokens (per call) |
+|---|---|---|---|
+| 1 file, 2 pages changed | 2 | ~150–500 | ~200–400 |
+| 3 files, 5 pages changed total | 5 | ~150–500 | ~200–400 |
 
-**Monthly cost estimates** (weekday runs = ~22 days/month, single summary call per run; driven by total change volume, not file count):
+**Monthly cost estimates** (weekday runs = ~22 days/month; cost scales with number of changed pages per run):
 
-| Scenario (approx. total changes per run) | Monthly cost (USD) |
+| Scenario (approx. changed pages per run) | Monthly cost (USD) |
 |---|---|
-| Light usage (~10–20 changes/run) | ~$0.01–0.03 |
-| Moderate usage (~20–50 changes/run) | ~$0.03–0.10 |
-| Heavy usage (~50–100+ changes/run) | ~$0.10–0.25 |
+| Light usage (~1–3 pages/run) | ~$0.01–0.05 |
+| Moderate usage (~3–10 pages/run) | ~$0.05–0.15 |
+| Heavy usage (~10–20+ pages/run) | ~$0.15–0.50 |
 
-These ranges are back-of-the-envelope estimates based on Claude Sonnet 4 pricing as of 2025-05, assuming one weekday run per day (~22/month) and ~300–1,500 input tokens plus ~200–800 output tokens per run.
+These ranges are back-of-the-envelope estimates based on Claude Sonnet 4 pricing as of 2025-05, assuming one weekday run per day (~22/month).
 
 Costs are **practically negligible** for most teams. Even with heavy usage, monthly costs are unlikely to exceed $1.
 
