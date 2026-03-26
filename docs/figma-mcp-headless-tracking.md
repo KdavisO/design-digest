@@ -10,7 +10,7 @@ DesignDigest における Figma データ取得経路の責務・制約・推奨
 
 | 項目 | Figma REST API | figma-developer-mcp | Figma MCP（use_figma） |
 |------|---------------|---------------------|----------------------|
-| **コード** | `figma-client.ts` | `.mcp.json` で設定 | Claude Desktop/claude.ai 内蔵 |
+| **コード** | `src/figma-client.ts` | `.mcp.json` で設定 | Claude Desktop/claude.ai 内蔵 |
 | **アダプタ** | `FigmaRestAdapter` | `FigmaMcpAdapter` で正規化 | `FigmaMcpAdapter` で正規化 |
 | **認証方式** | PAT（`FIGMA_TOKEN`） | PAT（`FIGMA_API_KEY`） | OAuth 2.0（ブラウザ認証） |
 | **ヘッドレス実行** | ✅ 可能 | ✅ 可能 | ❌ 不可（ブラウザ必須） |
@@ -26,16 +26,17 @@ DesignDigest における Figma データ取得経路の責務・制約・推奨
 
 **推奨: Figma REST API**
 
-- `src/diff.ts` → `FigmaRestAdapter` → `figma-client.ts`
+- `src/diff.ts` → `FigmaRestAdapter` → `src/figma-client.ts`
 - PAT 認証でヘッドレス実行可能
 - プロアクティブチャンク分割、バージョン履歴最適化済み
-- 他の経路は GitHub Actions では利用不可（MCP サーバーが不要）
+- REST API 経路は MCP サーバーが不要で、CI 環境だけで完結
+- 他の経路は Claude/MCP クライアントが前提のため、GitHub Actions では運用対象外
 
 ### 2. Claude Code CLI での手動デザインチェック（`/design-check`）
 
 **推奨: figma-developer-mcp**
 
-- `/design-check` コマンド → `get_figma_data` MCP ツール → `FigmaMcpAdapter` → `design-check.ts`
+- `/design-check` コマンド → `get_figma_data` MCP ツール → `FigmaMcpAdapter` → `src/design-check.ts`
 - PAT 認証のため `.mcp.json` に設定するだけで利用可能
 - Claude Code CLI で MCP ツールとして直接呼び出せる
 - `use_figma` は Claude Code CLI では未接続のため利用不可
@@ -54,14 +55,14 @@ DesignDigest における Figma データ取得経路の責務・制約・推奨
 ### `FigmaRestAdapter`
 
 - **責務**: Figma REST API を `FigmaDataAdapter` インターフェースでラップ
-- **利用場面**: GitHub Actions 定期実行（`diff.ts`）
-- **内部実装**: `figma-client.ts` の `fetchFileProactive()` / `fetchNodesProactive()` に委譲
+- **利用場面**: GitHub Actions 定期実行（`src/diff.ts`）
+- **内部実装**: `src/figma-client.ts` の `fetchFileProactive()` / `fetchNodesProactive()` に委譲
 - **特徴**: プロアクティブチャンク分割、ペイロード超過時のフォールバック
 
 ### `FigmaMcpAdapter`
 
 - **責務**: MCP ツール（`get_figma_data` / `use_figma`）のレスポンスを `FigmaDataAdapter` インターフェースに正規化
-- **利用場面**: Claude Code CLI / Claude Desktop での手動デザインチェック（`design-check.ts`）
+- **利用場面**: Claude Code CLI / Claude Desktop での手動デザインチェック（`src/design-check.ts`）
 - **内部実装**: MCP レスポンス JSON をパースし、ノード構造の差異を吸収（`fromMcpResponse()`）
 - **特徴**: フルファイル / ノード指定の両形式に対応、不正レスポンスのバリデーション
 
