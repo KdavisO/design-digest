@@ -18,6 +18,7 @@ import {
   formatSlackBlocks,
   formatSlackReport,
   groupByPage,
+  groupChangesForIssues,
   convertMarkdownToSlackMrkdwn,
 } from "./diff-engine.js";
 import { generatePageSummaries } from "./claude-summary.js";
@@ -26,7 +27,9 @@ import {
   fetchOpenIssues,
   findExistingGitHubIssue,
   createGitHubIssue,
+  addGitHubIssueComment,
   formatGitHubIssueBody,
+  formatGitHubIssueComment,
   generateGitHubIssueTitle,
   githubDefaultTitle,
 } from "./github-issue-client.js";
@@ -34,7 +37,9 @@ import type { GitHubIssueConfig } from "./github-issue-client.js";
 import {
   findExistingIssue,
   createBacklogIssue,
+  addBacklogComment,
   formatBacklogDescription,
+  formatBacklogComment,
   generateBacklogTitle,
   defaultTitle,
 } from "./backlog-client.js";
@@ -338,16 +343,22 @@ async function main(): Promise<void> {
   }
 
   // Reuse per-page summaries for issue bodies instead of making additional API calls.
-  // Joins page summaries into a single per-file summary text.
-  function getPerFileSummary(fileKey: string): string | undefined {
+  // Returns the summary for the pages that the given changes belong to.
+  function getSummaryForChanges(fileKey: string, changes: ChangeEntry[]): string | undefined {
     const fileSummaries = perFileSummaries.get(fileKey);
     if (!fileSummaries || fileSummaries.size === 0) return undefined;
-    return [...fileSummaries.entries()]
+    // Collect unique page names from the changes
+    const pageNames = new Set(changes.map((c) => c.pageName));
+    const relevantSummaries = [...fileSummaries.entries()]
+      .filter(([pageName]) => pageNames.has(pageName));
+    if (relevantSummaries.length === 0) return undefined;
+    if (relevantSummaries.length === 1) return relevantSummaries[0][1];
+    return relevantSummaries
       .map(([pageName, summary]) => `### ${pageName}\n${summary}`)
       .join("\n\n");
   }
 
-  // Create GitHub Issues
+  // Create GitHub Issues (node-level with page-level fallback)
   if (
     !config.dryRun &&
     config.githubIssueEnabled &&
@@ -380,51 +391,62 @@ async function main(): Promise<void> {
       const openIssues = await fetchOpenIssues(ghIssueConfig);
 
       for (const result of allChanges.filter((r) => r.changes.length > 0)) {
-        // Check for duplicate issues (uses cached list)
-        const existing = findExistingGitHubIssue(openIssues, result.fileKey);
-        if (existing) {
-          console.log(
-            `  Skipping ${result.fileKey} — existing issue found: #${existing.number}`,
-          );
-          continue;
-        }
+        const issueUnits = groupChangesForIssues(result.fileKey, result.changes);
 
-        // Generate title
-        let title: string;
-        if (config.anthropicApiKey) {
-          try {
-            title = await generateGitHubIssueTitle(
-              config.anthropicApiKey,
-              result.changes,
+        for (const unit of issueUnits) {
+          // Check for duplicate issues using the unit marker
+          const existing = findExistingGitHubIssue(openIssues, unit.marker);
+          if (existing) {
+            // Add comment with updated changes instead of skipping
+            const summary = getSummaryForChanges(result.fileKey, unit.changes);
+            const commentBody = formatGitHubIssueComment(unit.changes, summary);
+            await addGitHubIssueComment(ghIssueConfig, existing.number, commentBody);
+            console.log(
+              `  Comment added to #${existing.number} — ${unit.label}`,
             );
-          } catch {
-            title = githubDefaultTitle(result.changes);
+            continue;
           }
-        } else {
-          title = githubDefaultTitle(result.changes);
+
+          // Generate title
+          let title: string;
+          if (config.anthropicApiKey) {
+            try {
+              title = await generateGitHubIssueTitle(
+                config.anthropicApiKey,
+                unit.changes,
+              );
+            } catch {
+              title = githubDefaultTitle(unit.changes);
+            }
+          } else {
+            title = githubDefaultTitle(unit.changes);
+          }
+
+          const aiSummary = getSummaryForChanges(result.fileKey, unit.changes);
+          const scopeLabel = unit.scope === "node"
+            ? `Node: ${unit.label}`
+            : `Page: ${unit.label}`;
+
+          const body = formatGitHubIssueBody(
+            result.fileKey,
+            unit.changes,
+            aiSummary,
+            { marker: unit.marker, scopeLabel },
+          );
+
+          const issue = await createGitHubIssue(ghIssueConfig, title, body);
+          // Add to cache to prevent duplicates within the same run
+          openIssues.push({
+            number: issue.number,
+            title: issue.title,
+            html_url: issue.html_url,
+            body,
+            pull_request: undefined,
+          });
+          console.log(
+            `  GitHub Issue created: #${issue.number} — ${issue.title}`,
+          );
         }
-
-        // Reuse per-page summaries as per-file summary for issue body
-        const perFileSummary = getPerFileSummary(result.fileKey);
-
-        const body = formatGitHubIssueBody(
-          result.fileKey,
-          result.changes,
-          perFileSummary,
-        );
-
-        const issue = await createGitHubIssue(ghIssueConfig, title, body);
-        // Add to cache to prevent duplicates within the same run
-        openIssues.push({
-          number: issue.number,
-          title: issue.title,
-          html_url: issue.html_url,
-          body,
-          pull_request: undefined,
-        });
-        console.log(
-          `  GitHub Issue created: #${issue.number} — ${issue.title}`,
-        );
       }
     } catch (err) {
       console.warn("GitHub Issue creation failed:", err);
@@ -440,7 +462,7 @@ async function main(): Promise<void> {
     );
   }
 
-  // Create Backlog issues
+  // Create Backlog issues (node-level with page-level fallback)
   if (
     !config.dryRun &&
     config.backlogEnabled &&
@@ -448,7 +470,7 @@ async function main(): Promise<void> {
     config.backlogSpaceId &&
     config.backlogProjectId
   ) {
-    console.log("\nCreating Backlog issue...");
+    console.log("\nCreating Backlog issues...");
     try {
       const backlogConfig: BacklogConfig = {
         apiKey: config.backlogApiKey,
@@ -459,47 +481,57 @@ async function main(): Promise<void> {
         assigneeId: config.backlogAssigneeId,
       };
 
-      // Process each file with changes
       for (const result of allChanges.filter((r) => r.changes.length > 0)) {
-        // Check for duplicate issues
-        const existing = await findExistingIssue(backlogConfig, result.fileKey);
-        if (existing) {
-          console.log(
-            `  Skipping ${result.fileKey} — existing issue found: ${existing.issueKey}`,
-          );
-          continue;
-        }
+        const issueUnits = groupChangesForIssues(result.fileKey, result.changes);
 
-        // Generate title (use Claude if available, otherwise default)
-        let title: string;
-        if (config.anthropicApiKey) {
-          try {
-            title = await generateBacklogTitle(
-              config.anthropicApiKey,
-              result.changes,
+        for (const unit of issueUnits) {
+          // Check for duplicate issues using the unit marker
+          const existing = await findExistingIssue(backlogConfig, unit.marker);
+          if (existing) {
+            // Add comment with updated changes instead of skipping
+            const summary = getSummaryForChanges(result.fileKey, unit.changes);
+            const commentBody = formatBacklogComment(unit.changes, summary);
+            await addBacklogComment(backlogConfig, existing.issueKey, commentBody);
+            console.log(
+              `  Comment added to ${existing.issueKey} — ${unit.label}`,
             );
-          } catch {
-            title = defaultTitle(result.changes);
+            continue;
           }
-        } else {
-          title = defaultTitle(result.changes);
+
+          // Generate title (use Claude if available, otherwise default)
+          let title: string;
+          if (config.anthropicApiKey) {
+            try {
+              title = await generateBacklogTitle(
+                config.anthropicApiKey,
+                unit.changes,
+              );
+            } catch {
+              title = defaultTitle(unit.changes);
+            }
+          } else {
+            title = defaultTitle(unit.changes);
+          }
+
+          const aiSummary = getSummaryForChanges(result.fileKey, unit.changes);
+          const scopeLabel = unit.scope === "node"
+            ? `Node: ${unit.label}`
+            : `Page: ${unit.label}`;
+
+          const description = formatBacklogDescription(
+            result.fileKey,
+            unit.changes,
+            aiSummary,
+            { marker: unit.marker, scopeLabel },
+          );
+
+          const issue = await createBacklogIssue(
+            backlogConfig,
+            title,
+            description,
+          );
+          console.log(`  Backlog issue created: ${issue.issueKey} — ${issue.summary}`);
         }
-
-        // Reuse per-page summaries as per-file summary for issue body
-        const perFileSummary = getPerFileSummary(result.fileKey);
-
-        const description = formatBacklogDescription(
-          result.fileKey,
-          result.changes,
-          perFileSummary,
-        );
-
-        const issue = await createBacklogIssue(
-          backlogConfig,
-          title,
-          description,
-        );
-        console.log(`  Backlog issue created: ${issue.issueKey} — ${issue.summary}`);
       }
     } catch (err) {
       console.warn("Backlog issue creation failed:", err);

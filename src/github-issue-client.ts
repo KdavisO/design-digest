@@ -78,15 +78,15 @@ export async function fetchOpenIssues(
 }
 
 /**
- * Search cached open issues for one matching the given Figma file key.
+ * Search cached open issues for one matching the given marker string.
+ * The marker is matched as a standalone line in the issue body.
  * Pass the result of fetchOpenIssues to avoid repeated API calls.
  */
 export function findExistingGitHubIssue(
   openIssues: GitHubIssueResponse[],
-  fileKey: string,
+  marker: string,
 ): GitHubIssue | null {
-  const markerLine = `[DesignDigest] ${fileKey}`;
-  const escapedMarker = markerLine.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const escapedMarker = marker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const markerRegex = new RegExp(`(^|\\n)${escapedMarker}(\\n|$)`);
   const match = openIssues.find(
     (issue) => issue.body != null && markerRegex.test(issue.body),
@@ -99,6 +99,35 @@ export function findExistingGitHubIssue(
     title: match.title,
     html_url: match.html_url,
   };
+}
+
+/**
+ * Add a comment to an existing GitHub Issue with updated change details.
+ */
+export async function addGitHubIssueComment(
+  config: GitHubIssueConfig,
+  issueNumber: number,
+  body: string,
+): Promise<void> {
+  const url = `https://api.github.com/repos/${config.owner}/${config.repo}/issues/${issueNumber}/comments`;
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${config.token}`,
+      Accept: "application/vnd.github+json",
+      "Content-Type": "application/json",
+      "X-GitHub-Api-Version": "2022-11-28",
+    },
+    body: JSON.stringify({ body }),
+  });
+
+  if (!response.ok) {
+    const responseBody = await response.text().catch(() => "");
+    throw new Error(
+      `GitHub comment creation failed: ${response.status} ${response.statusText}${responseBody ? ` - ${responseBody}` : ""}`,
+    );
+  }
 }
 
 /**
@@ -147,20 +176,28 @@ export async function createGitHubIssue(
 
 /**
  * Format change entries into a GitHub Issue body (Markdown).
+ * @param marker - Marker string for duplicate detection (defaults to `[DesignDigest] {fileKey}`)
+ * @param scopeLabel - Optional scope label (e.g., "Node: Button (FRAME)" or "Page: Home")
  */
 export function formatGitHubIssueBody(
   fileKey: string,
   changes: ChangeEntry[],
   aiSummary?: string,
+  options?: { marker?: string; scopeLabel?: string },
 ): string {
   const figmaUrl = `https://www.figma.com/design/${fileKey}`;
+  const marker = options?.marker ?? `[DesignDigest] ${fileKey}`;
   const lines: string[] = [
-    `[DesignDigest] ${fileKey}`,
+    marker,
     "",
     `**Figma file:** [${fileKey}](${figmaUrl})`,
-    `**${changes.length} change(s) detected**`,
-    "",
   ];
+
+  if (options?.scopeLabel) {
+    lines.push(`**Scope:** ${options.scopeLabel}`);
+  }
+
+  lines.push(`**${changes.length} change(s) detected**`, "");
 
   if (aiSummary) {
     lines.push("## AI Summary", "", aiSummary, "");
@@ -209,6 +246,58 @@ export function formatGitHubIssueBody(
     "---",
     "*This issue was automatically created by [DesignDigest](https://github.com/KdavisO/design-digest).*",
   );
+
+  return lines.join("\n");
+}
+
+/**
+ * Format a comment body for appending updated changes to an existing issue.
+ */
+export function formatGitHubIssueComment(
+  changes: ChangeEntry[],
+  aiSummary?: string,
+): string {
+  const lines: string[] = [
+    `**${changes.length} new change(s) detected** (${new Date().toISOString().split("T")[0]})`,
+    "",
+  ];
+
+  if (aiSummary) {
+    lines.push("## AI Summary", "", aiSummary, "");
+  }
+
+  lines.push("## Changes", "");
+
+  const grouped: Record<string, ChangeEntry[]> = {};
+  for (const change of changes) {
+    (grouped[change.pageName] ??= []).push(change);
+  }
+
+  for (const [pageName, pageChanges] of Object.entries(grouped)) {
+    lines.push(`### ${pageName}`, "");
+    for (const change of pageChanges) {
+      switch (change.kind) {
+        case "added":
+          lines.push(`- ➕ Added: **${change.nodeName}** (${change.nodeType})`);
+          break;
+        case "deleted":
+          lines.push(`- ➖ Deleted: **${change.nodeName}** (${change.nodeType})`);
+          break;
+        case "renamed":
+          lines.push(`- 🏷️ Renamed: \`${String(change.oldValue)}\` → \`${String(change.newValue)}\``);
+          break;
+        case "modified": {
+          const target =
+            change.property != null && change.property !== ""
+              ? `**${change.nodeName}**.${change.property}`
+              : `**${change.nodeName}**`;
+          lines.push(`- ✏️ Modified: ${target}: \`${formatVal(change.oldValue)}\` → \`${formatVal(change.newValue)}\``);
+          break;
+        }
+      }
+    }
+    lines.push("");
+  }
 
   return lines.join("\n");
 }

@@ -35,17 +35,17 @@ function baseUrl(spaceId: string): string {
 }
 
 /**
- * Search for existing issues that match the given Figma file key
+ * Search for existing issues that match the given marker string
  * to prevent duplicate issue creation.
  */
 export async function findExistingIssue(
   config: BacklogConfig,
-  fileKey: string,
+  marker: string,
 ): Promise<BacklogIssue | null> {
   const params = new URLSearchParams({
     apiKey: config.apiKey,
     "projectId[]": config.projectId,
-    keyword: `[DesignDigest] ${fileKey}`,
+    keyword: marker,
     count: "1",
     sort: "created",
     order: "desc",
@@ -124,20 +124,28 @@ export async function createBacklogIssue(
 
 /**
  * Format change entries into a Backlog issue description.
+ * @param marker - Marker string for duplicate detection (defaults to `[DesignDigest] {fileKey}`)
+ * @param scopeLabel - Optional scope label (e.g., "Node: Button (FRAME)" or "Page: Home")
  */
 export function formatBacklogDescription(
   fileKey: string,
   changes: ChangeEntry[],
   aiSummary?: string,
+  options?: { marker?: string; scopeLabel?: string },
 ): string {
   const figmaUrl = `https://www.figma.com/design/${fileKey}`;
+  const marker = options?.marker ?? `[DesignDigest] ${fileKey}`;
   const lines: string[] = [
-    `[DesignDigest] ${fileKey}`,
+    marker,
     "",
     `Figma file: ${figmaUrl}`,
-    `${changes.length} change(s) detected`,
-    "",
   ];
+
+  if (options?.scopeLabel) {
+    lines.push(`Scope: ${options.scopeLabel}`);
+  }
+
+  lines.push(`${changes.length} change(s) detected`, "");
 
   if (aiSummary) {
     lines.push("## AI Summary", "", aiSummary, "");
@@ -176,6 +184,78 @@ export function formatBacklogDescription(
   }
 
   return lines.join("\n");
+}
+
+/**
+ * Format a comment body for appending updated changes to an existing Backlog issue.
+ */
+export function formatBacklogComment(
+  changes: ChangeEntry[],
+  aiSummary?: string,
+): string {
+  const lines: string[] = [
+    `${changes.length} new change(s) detected (${new Date().toISOString().split("T")[0]})`,
+    "",
+  ];
+
+  if (aiSummary) {
+    lines.push("## AI Summary", "", aiSummary, "");
+  }
+
+  lines.push("## Changes", "");
+
+  const grouped: Record<string, ChangeEntry[]> = {};
+  for (const change of changes) {
+    (grouped[change.pageName] ??= []).push(change);
+  }
+
+  for (const [pageName, pageChanges] of Object.entries(grouped)) {
+    lines.push(`### ${pageName}`, "");
+    for (const change of pageChanges) {
+      switch (change.kind) {
+        case "added":
+          lines.push(`- Added: ${change.nodeName} (${change.nodeType})`);
+          break;
+        case "deleted":
+          lines.push(`- Deleted: ${change.nodeName} (${change.nodeType})`);
+          break;
+        case "renamed":
+          lines.push(`- Renamed: ${String(change.oldValue)} → ${String(change.newValue)}`);
+          break;
+        case "modified":
+          lines.push(`- Modified: ${change.nodeName}.${change.property ?? ""}: ${formatVal(change.oldValue)} → ${formatVal(change.newValue)}`);
+          break;
+      }
+    }
+    lines.push("");
+  }
+
+  return lines.join("\n");
+}
+
+/**
+ * Add a comment to an existing Backlog issue.
+ */
+export async function addBacklogComment(
+  config: BacklogConfig,
+  issueIdOrKey: string,
+  content: string,
+): Promise<void> {
+  const params = new URLSearchParams({ apiKey: config.apiKey });
+  const url = `${baseUrl(config.spaceId)}/issues/${issueIdOrKey}/comments?${params}`;
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ content }),
+  });
+
+  if (!response.ok) {
+    const responseBody = await response.text().catch(() => "");
+    throw new Error(
+      `Backlog API comment creation failed: ${response.status} ${response.statusText}${responseBody ? ` - ${responseBody}` : ""}`,
+    );
+  }
 }
 
 function formatVal(value: unknown): string {
