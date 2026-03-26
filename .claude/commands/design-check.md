@@ -6,9 +6,10 @@ Figma MCP 経由でデザイン差分検出を実行する。
    ```bash
    set -a
    if [ -f .env ]; then
-     . .env
+     . .env || { echo "'.env' の読み込みに失敗しました（構文エラー等）。内容を確認してください。" >&2; exit 1; }
    else
      echo "'.env' が見つかりません。FIGMA_FILE_KEY などの環境変数を手動で設定してください。" >&2
+     exit 1
    fi
    set +a
    ```
