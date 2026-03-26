@@ -549,7 +549,7 @@ main().catch(async (err) => {
 
       try {
         await sendSlackNotification(webhookUrl, {
-          text: `⚠️ Failed: ${errorMessage}`,
+          text: `⚠️ Error: ${errorMessage}`,
           blocks: [
             {
               type: "header",
