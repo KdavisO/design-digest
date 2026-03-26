@@ -51,12 +51,15 @@ function parseArgs(): CliArgs {
 
   // Require file key from args or env
   if (!fileKey) {
-    const envKeys = process.env.FIGMA_FILE_KEY?.split(",").map((s) => s.trim()).filter(Boolean);
-    if (envKeys && envKeys.length > 1) {
+    const rawEnvKey = process.env.FIGMA_FILE_KEY;
+    const envKeys = rawEnvKey
+      ? rawEnvKey.split(",").map((s) => s.trim()).filter(Boolean)
+      : [];
+    if (envKeys.length > 1) {
       console.error("Error: FIGMA_FILE_KEY contains multiple keys. Use --file-key to specify which one.");
       process.exit(1);
     }
-    fileKey = envKeys?.[0];
+    fileKey = envKeys[0];
   }
 
   if (!fileKey) {
@@ -82,7 +85,7 @@ async function main(): Promise<void> {
 
   // 2. Normalize via adapter
   const watchPages =
-    process.env.FIGMA_WATCH_PAGES?.split(",")?.map((s) => s.trim()).filter(Boolean) ?? [];
+    process.env.FIGMA_WATCH_PAGES?.split(",")?.map((s) => s.trim())?.filter(Boolean) ?? [];
   const adapter = FigmaMcpAdapter.fromMcpResponse(mcpResponse);
   const pages = await adapter.fetchPages(fileKey, { watchPages });
 
