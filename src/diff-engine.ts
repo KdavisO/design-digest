@@ -622,7 +622,7 @@ export function groupChangesForIssues(fileKey: string, changes: ChangeEntry[]): 
     // Page-level fallback
     const byPage = groupByPage(changes);
     return Object.entries(byPage).map(([pageName, pageChanges]) => ({
-      marker: `[DesignDigest] ${fileKey} page:${pageName}`,
+      marker: `[DesignDigest] ${fileKey} page:${encodeURIComponent(pageName)}`,
       label: pageName,
       changes: pageChanges,
       scope: "page" as const,
