@@ -396,6 +396,38 @@ describe("fetchFileProactive", () => {
     expect(chunkedPages).toEqual([]);
   });
 
+  it("uses shallow result for all pages when depth=1 (no extra API calls)", async () => {
+    const manyChildren = Array.from({ length: 60 }, (_, i) => ({
+      id: `1:${i + 1}`, name: `Child${i + 1}`, type: "FRAME" as const,
+    }));
+    const shallowFile: FigmaFile = {
+      name: "Test",
+      lastModified: "2024-01-01",
+      version: "1",
+      document: {
+        id: "0:0",
+        name: "Document",
+        type: "DOCUMENT",
+        children: [
+          { id: "1:0", name: "SmallPage", type: "CANVAS", children: [
+            { id: "1:1", name: "Frame", type: "FRAME" },
+          ]},
+          { id: "2:0", name: "BigPage", type: "CANVAS", children: manyChildren },
+        ],
+      },
+    };
+
+    const fetchSpy = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(mockFileResponse(shallowFile)); // depth=1 file fetch only
+
+    const { pages, chunkedPages } = await fetchFileProactive("token", "fileKey", [], 1, 5);
+
+    // Only 1 fetch call — no /nodes or chunked fetches
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(Object.keys(pages).sort()).toEqual(["BigPage", "SmallPage"]);
+    expect(chunkedPages).toEqual([]);
+  });
+
   it("chunks large pages proactively", async () => {
     // Create a page with >50 children to trigger proactive chunking
     const manyChildren = Array.from({ length: 60 }, (_, i) => ({
@@ -520,5 +552,27 @@ describe("fetchNodesProactive", () => {
     expect(chunkedNodes).toContain("LargeNode");
     // 1 shallow fetch + 20 child batch fetches (no redundant discovery fetch)
     expect(fetchSpy).toHaveBeenCalledTimes(21);
+  });
+
+  it("uses shallow result for large nodes when depth=1 (no chunking)", async () => {
+    const manyChildren = Array.from({ length: 60 }, (_, i) => ({
+      id: `1:${i + 1}`, name: `Child${i + 1}`, type: "FRAME" as const,
+    }));
+    const largeNode: FigmaNode = {
+      id: "1:0", name: "LargeNode", type: "CANVAS",
+      children: manyChildren,
+    };
+
+    const fetchSpy = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(mockNodesResponse({ "1:0": largeNode })); // depth=1 check only
+
+    const { nodes, chunkedNodes } = await fetchNodesProactive("token", "fileKey", ["1:0"], 1);
+
+    expect(nodes["1:0"].name).toBe("LargeNode");
+    expect(nodes["1:0"].children).toHaveLength(60);
+    // Only 1 fetch call — shallow result reused, no chunking
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    // Large nodes are NOT reported as chunked when depth=1
+    expect(chunkedNodes).toEqual([]);
   });
 });

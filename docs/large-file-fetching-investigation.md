@@ -94,6 +94,7 @@ REST API ベースのサードパーティ MCP サーバー（例: `thirdstrands
 - 共通: 常に最初に 1（`depth=1` でページメタデータ取得）
 - 小規模ファイル: 1（depth=1取得） + 1（単一バッチでの `/nodes` 取得）= 最低 2 コール
   - ※ 従来の `GET /files/:key` 単体呼び出し（1コール）と比べて、メタデータ取得分だけ +1 コールとなる
-- 大規模ファイル: 1（depth=1取得） + 1（チャンク discovery）+ ceil(N/batchSize)（チャンク取得）
+- 大規模ファイル: 1（depth=1取得） + ceil(N/batchSize)（チャンク取得）
+  - `precomputedShallow` により `fetchNodesChunked` 内の冗長な depth=1 discovery を省略
   - 失敗する全体取得（1コール）を前提としたリトライを行わないため、タイムアウトリスクと無駄な全体取得コールを削減
   - 小規模時の余分な 1 コールと引き換えに、大規模時の安定性を向上させるトレードオフ
