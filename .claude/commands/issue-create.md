@@ -28,6 +28,7 @@ description: 以下の内容からGitHub Issueを作成してください。
    - `enhancement` or `feature`: 新機能
    - `refactor`: リファクタリング
    - `documentation`: ドキュメント
+   - `research`: 調査・検討タスク（技術調査、設計検討、問題分析など。成果物はIssue起票）
    <!-- プロジェクト固有のラベルを追加（例: `ui/ux`, `database` 等） -->
 5. 優先度ラベルを選択（必須）:
    - `priority:high`: リリース前に必須（セキュリティ、法的要件など）
