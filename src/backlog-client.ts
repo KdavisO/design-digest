@@ -47,11 +47,13 @@ export async function findExistingIssue(
   // so we fetch without status filter and exclude closed issues client-side.
   const CLOSED_STATUS_ID = 4;
 
+  const MAX_COUNT = 100;
+
   const params = new URLSearchParams({
     apiKey: config.apiKey,
     "projectId[]": config.projectId,
     keyword: marker,
-    count: "20",
+    count: String(MAX_COUNT),
     sort: "created",
     order: "desc",
   });
@@ -68,6 +70,13 @@ export async function findExistingIssue(
 
   const issues: BacklogIssueListItem[] = await response.json();
   if (issues.length === 0) return null;
+
+  if (issues.length >= MAX_COUNT) {
+    console.warn(
+      `[DesignDigest] Warning: Backlog search returned ${issues.length} issues (limit: ${MAX_COUNT}). ` +
+        `Marker match may be missed. Consider narrowing the search keyword.`,
+    );
+  }
 
   // Validate marker exact line match in description to prevent partial matches
   // (e.g., "node:1:2" matching "node:1:23"), and exclude closed issues.

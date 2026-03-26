@@ -165,7 +165,7 @@ describe("findExistingIssue", () => {
 
     const url = fetchSpy.mock.calls[0][0] as string;
     expect(url).toContain("keyword=%5BDesignDigest%5D+abc123+page%3AHome");
-    expect(url).toContain("count=20");
+    expect(url).toContain("count=100");
   });
 
   it("excludes closed issues (status.id === 4)", async () => {
@@ -240,6 +240,43 @@ describe("findExistingIssue", () => {
     await expect(findExistingIssue(mockConfig, "[DesignDigest] abc123 node:1:2")).rejects.toThrow(
       "Backlog API search failed: 401 Unauthorized",
     );
+  });
+
+  it("logs warning when results reach the limit (100)", async () => {
+    const issues = Array.from({ length: 100 }, (_, i) => ({
+      id: i + 1,
+      issueKey: `TEST-${i + 1}`,
+      summary: "changes",
+      description: "no match here",
+    }));
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(JSON.stringify(issues), { status: 200 }),
+    );
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    await findExistingIssue(mockConfig, "[DesignDigest] abc123 node:1:2");
+
+    expect(warnSpy).toHaveBeenCalledOnce();
+    expect(warnSpy.mock.calls[0][0]).toContain("100 issues (limit: 100)");
+    warnSpy.mockRestore();
+  });
+
+  it("does not log warning when results are below limit", async () => {
+    const issues = Array.from({ length: 99 }, (_, i) => ({
+      id: i + 1,
+      issueKey: `TEST-${i + 1}`,
+      summary: "changes",
+      description: "no match here",
+    }));
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(JSON.stringify(issues), { status: 200 }),
+    );
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    await findExistingIssue(mockConfig, "[DesignDigest] abc123 node:1:2");
+
+    expect(warnSpy).not.toHaveBeenCalled();
+    warnSpy.mockRestore();
   });
 });
 
