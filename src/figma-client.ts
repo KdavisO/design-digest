@@ -202,34 +202,41 @@ export async function fetchFileProactive(
     }
   }
 
-  // Step 4: Fetch large pages via single batched chunked fetch
+  // Step 4: Fetch large pages — use shallow result for depth=1, chunked fetch otherwise
   if (largePages.length > 0) {
-    const perPageBatches = largePages.map((page) => {
-      const childCount = page.children?.length ?? 0;
-      return adaptiveBatchSize(childCount, batchSize);
-    });
-    const globalEffectiveBatch = Math.min(...perPageBatches);
+    if (depth === 1) {
+      // depth=1: shallow file already contains the full page nodes
+      for (const page of largePages) {
+        pages[page.name || page.id] = page;
+      }
+    } else {
+      const perPageBatches = largePages.map((page) => {
+        const childCount = page.children?.length ?? 0;
+        return adaptiveBatchSize(childCount, batchSize);
+      });
+      const globalEffectiveBatch = Math.min(...perPageBatches);
 
-    for (const page of largePages) {
-      const childCount = page.children?.length ?? 0;
-      console.log(
-        `  Proactive chunked fetch: ${page.name} (${childCount} children, batch size ${globalEffectiveBatch})`,
+      for (const page of largePages) {
+        const childCount = page.children?.length ?? 0;
+        console.log(
+          `  Proactive chunked fetch: ${page.name} (${childCount} children, batch size ${globalEffectiveBatch})`,
+        );
+        chunkedPages.push(page.name);
+      }
+
+      const largePageIds = largePages.map((p) => p.id);
+      const chunkedNodes = await fetchNodesChunked(
+        token,
+        fileKey,
+        largePageIds,
+        depth,
+        globalEffectiveBatch,
       );
-      chunkedPages.push(page.name);
-    }
-
-    const largePageIds = largePages.map((p) => p.id);
-    const chunkedNodes = await fetchNodesChunked(
-      token,
-      fileKey,
-      largePageIds,
-      depth,
-      globalEffectiveBatch,
-    );
-    for (const page of largePages) {
-      const node = chunkedNodes[page.id];
-      if (node) {
-        pages[node.name || page.id] = node;
+      for (const page of largePages) {
+        const node = chunkedNodes[page.id];
+        if (node) {
+          pages[node.name || page.id] = node;
+        }
       }
     }
   }
