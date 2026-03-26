@@ -47,8 +47,8 @@ DesignDigest における Figma データ取得経路の責務・制約・推奨
 
 - Anthropic 内蔵の `use_figma` ツールを使用
 - OAuth 認証（初回ブラウザ認証）
-- Claude Desktop / claude.ai 環境でのみ利用可能
-- `/design-check` コマンドの手順2で `use_figma` を指定して実行可能
+- 主に Claude Desktop / claude.ai などの Anthropic クライアント環境で利用可能（実際の対応クライアントは Anthropic 側の提供状況に依存）
+- Claude Desktop / claude.ai のチャットから `use_figma` ツールを直接呼び出してデザインチェックを実行（このリポジトリの `/design-check` コマンドとは別経路）
 
 ## アダプタの役割整理
 
