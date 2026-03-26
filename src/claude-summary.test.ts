@@ -73,9 +73,12 @@ describe("generatePageSummaries", () => {
     const mockGenerate = vi.fn().mockImplementation(async () => {
       running++;
       maxRunning = Math.max(maxRunning, running);
-      await new Promise((r) => setTimeout(r, 50));
-      running--;
-      return "summary";
+      try {
+        await new Promise((r) => setTimeout(r, 50));
+        return "summary";
+      } finally {
+        running--;
+      }
     });
 
     const changesByPage: Record<string, ChangeEntry[]> = {};
@@ -88,7 +91,7 @@ describe("generatePageSummaries", () => {
     const { summaries, failedPages } = await generatePageSummaries("fake-key", changesByPage, mockGenerate, 2);
     expect(summaries.size).toBe(6);
     expect(failedPages).toEqual([]);
-    expect(maxRunning).toBeLessThanOrEqual(2);
+    expect(maxRunning).toBe(2);
     expect(mockGenerate).toHaveBeenCalledTimes(6);
   });
 
