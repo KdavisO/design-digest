@@ -89,6 +89,7 @@ Optional variables (**Settings → Secrets and variables → Actions → Variabl
 | `FIGMA_WATCH_PAGES` | (all pages) | Comma-separated page names to watch |
 | `FIGMA_WATCH_NODE_IDS` | (none) | Comma-separated node IDs (reduces API cost) |
 | `FIGMA_NODE_DEPTH` | (unlimited) | Limit Figma API response depth (e.g., `3`) |
+| `FIGMA_BATCH_SIZE` | `5` | Batch size for chunked node fetching |
 | `CLAUDE_SUMMARY_ENABLED` | `false` | Set to `true` to enable AI summaries |
 
 The workflow runs automatically on weekdays at 10:00 JST. You can also trigger it manually from the Actions tab.
@@ -122,11 +123,14 @@ Find node IDs in Figma: right-click a frame → **Copy/Paste as** → **Copy lin
 For large Figma files that exceed API payload limits, DesignDigest automatically:
 
 1. **Version check first** — skips snapshot comparison entirely if the file hasn't changed (1 API call)
-2. **Chunked fetch** — if a normal fetch fails due to size, automatically splits into per-child-node requests
-3. **Depth limiting** — set `FIGMA_NODE_DEPTH` to limit how deep the node tree is fetched
+2. **Proactive chunking** — fetches at depth=1 first, estimates complexity per page, and chunks large subtrees (>50 children) before hitting payload limits. This avoids the error-then-retry pattern and saves API calls.
+3. **Adaptive batch sizing** — automatically reduces batch size for pages with many children (e.g., 3 for 50-200 children, 2 for 200+)
+4. **Error fallback** — if proactive estimation misses a case, still falls back to chunked fetch on payload errors
+5. **Depth limiting** — set `FIGMA_NODE_DEPTH` to limit how deep the node tree is fetched
 
 ```
 FIGMA_NODE_DEPTH=3
+FIGMA_BATCH_SIZE=5  # default: 5, adjust for your file sizes
 ```
 
 This is useful when monitoring large pages/frames. The trade-off is that changes deeper than the specified depth won't be detected.

@@ -5,6 +5,10 @@ import {
   extractEditorsSince,
   checkVersionChanged,
   fetchNodesChunked,
+  countShallowChildren,
+  adaptiveBatchSize,
+  fetchFileProactive,
+  fetchNodesProactive,
 } from "./figma-client.js";
 import type { FigmaNode, FigmaFile, FigmaVersion } from "./figma-client.js";
 
@@ -315,5 +319,202 @@ describe("fetchNodesChunked", () => {
     // Only 1 fetch call (discovery), children from shallow result used directly
     expect(fetchSpy).toHaveBeenCalledTimes(1);
     expect(result["1:0"].children).toHaveLength(1);
+  });
+});
+
+describe("countShallowChildren", () => {
+  it("counts children across multiple nodes", () => {
+    const nodes: FigmaNode[] = [
+      { id: "1:0", name: "A", type: "CANVAS", children: [
+        { id: "1:1", name: "C1", type: "FRAME" },
+        { id: "1:2", name: "C2", type: "FRAME" },
+      ]},
+      { id: "2:0", name: "B", type: "CANVAS", children: [
+        { id: "2:1", name: "C3", type: "FRAME" },
+      ]},
+    ];
+    expect(countShallowChildren(nodes)).toBe(3);
+  });
+
+  it("returns 0 for nodes without children", () => {
+    const nodes: FigmaNode[] = [
+      { id: "1:0", name: "Leaf", type: "TEXT" },
+    ];
+    expect(countShallowChildren(nodes)).toBe(0);
+  });
+});
+
+describe("adaptiveBatchSize", () => {
+  it("returns base batch size for small child counts", () => {
+    expect(adaptiveBatchSize(5, 10)).toBe(10);
+    expect(adaptiveBatchSize(10, 10)).toBe(10);
+  });
+
+  it("caps at 5 for medium child counts", () => {
+    expect(adaptiveBatchSize(30, 10)).toBe(5);
+    expect(adaptiveBatchSize(50, 10)).toBe(5);
+  });
+
+  it("caps at 3 for large child counts", () => {
+    expect(adaptiveBatchSize(100, 10)).toBe(3);
+    expect(adaptiveBatchSize(200, 10)).toBe(3);
+  });
+
+  it("caps at 2 for very large child counts", () => {
+    expect(adaptiveBatchSize(300, 10)).toBe(2);
+    expect(adaptiveBatchSize(500, 10)).toBe(2);
+  });
+
+  it("respects base batch size when it is already small", () => {
+    expect(adaptiveBatchSize(100, 2)).toBe(2);
+    expect(adaptiveBatchSize(30, 3)).toBe(3);
+  });
+});
+
+describe("fetchFileProactive", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  function mockFileResponse(file: FigmaFile) {
+    return new Response(JSON.stringify(file), { status: 200 });
+  }
+
+  function mockNodesResponse(nodes: Record<string, FigmaNode>) {
+    const wrapped: Record<string, { document: FigmaNode }> = {};
+    for (const [id, node] of Object.entries(nodes)) {
+      wrapped[id] = { document: node };
+    }
+    return new Response(JSON.stringify({ nodes: wrapped }), { status: 200 });
+  }
+
+  it("fetches small pages in a single request without chunking", async () => {
+    const shallowFile: FigmaFile = {
+      name: "Test",
+      lastModified: "2024-01-01",
+      version: "1",
+      document: {
+        id: "0:0",
+        name: "Document",
+        type: "DOCUMENT",
+        children: [
+          { id: "1:0", name: "Page1", type: "CANVAS", children: [
+            { id: "1:1", name: "Frame", type: "FRAME" },
+          ]},
+        ],
+      },
+    };
+    const fullPage: FigmaNode = {
+      id: "1:0", name: "Page1", type: "CANVAS",
+      children: [{ id: "1:1", name: "Frame", type: "FRAME", fills: [] }],
+    };
+
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(mockFileResponse(shallowFile)) // depth=1 file fetch
+      .mockResolvedValueOnce(mockNodesResponse({ "1:0": fullPage })); // small pages fetch
+
+    const { pages, chunkedPages } = await fetchFileProactive("token", "fileKey", [], undefined, 5);
+
+    expect(Object.keys(pages)).toEqual(["Page1"]);
+    expect(chunkedPages).toEqual([]);
+  });
+
+  it("chunks large pages proactively", async () => {
+    // Create a page with >50 children to trigger proactive chunking
+    const manyChildren = Array.from({ length: 60 }, (_, i) => ({
+      id: `1:${i + 1}`,
+      name: `Child${i + 1}`,
+      type: "FRAME" as const,
+    }));
+
+    const shallowFile: FigmaFile = {
+      name: "Test",
+      lastModified: "2024-01-01",
+      version: "1",
+      document: {
+        id: "0:0",
+        name: "Document",
+        type: "DOCUMENT",
+        children: [
+          { id: "1:0", name: "BigPage", type: "CANVAS", children: manyChildren },
+        ],
+      },
+    };
+
+    // fetchNodesChunked will first fetch at depth=1, then batch children
+    const shallowPage: FigmaNode = {
+      id: "1:0", name: "BigPage", type: "CANVAS",
+      children: manyChildren,
+    };
+
+    // Mock: depth=1 file, then fetchNodesChunked internals (depth=1 discovery + batches)
+    const fetchSpy = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(mockFileResponse(shallowFile)) // depth=1 file fetch
+      .mockResolvedValueOnce(mockNodesResponse({ "1:0": shallowPage })); // chunked: depth=1 discovery
+
+    // Mock batch responses for all 60 children (batch size 3 for 60 children)
+    for (let i = 0; i < 60; i += 3) {
+      const batch: Record<string, FigmaNode> = {};
+      for (let j = i; j < Math.min(i + 3, 60); j++) {
+        batch[`1:${j + 1}`] = { id: `1:${j + 1}`, name: `Child${j + 1}`, type: "FRAME" };
+      }
+      fetchSpy.mockResolvedValueOnce(mockNodesResponse(batch));
+    }
+
+    const { pages, chunkedPages } = await fetchFileProactive("token", "fileKey", [], undefined, 5);
+
+    expect(chunkedPages).toEqual(["BigPage"]);
+    expect(pages["BigPage"]).toBeDefined();
+    expect(pages["BigPage"].children).toHaveLength(60);
+  });
+});
+
+describe("fetchNodesProactive", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  function mockNodesResponse(nodes: Record<string, FigmaNode>) {
+    const wrapped: Record<string, { document: FigmaNode }> = {};
+    for (const [id, node] of Object.entries(nodes)) {
+      wrapped[id] = { document: node };
+    }
+    return new Response(JSON.stringify({ nodes: wrapped }), { status: 200 });
+  }
+
+  it("fetches small nodes without chunking", async () => {
+    const node: FigmaNode = {
+      id: "1:0", name: "SmallNode", type: "CANVAS",
+      children: [{ id: "1:1", name: "Child", type: "FRAME" }],
+    };
+    const fullNode: FigmaNode = {
+      id: "1:0", name: "SmallNode", type: "CANVAS",
+      children: [{ id: "1:1", name: "Child", type: "FRAME", fills: [] }],
+    };
+
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(mockNodesResponse({ "1:0": node })) // depth=1 check
+      .mockResolvedValueOnce(mockNodesResponse({ "1:0": fullNode })); // full fetch
+
+    const { nodes, chunkedNodes } = await fetchNodesProactive("token", "fileKey", ["1:0"]);
+
+    expect(nodes["1:0"].name).toBe("SmallNode");
+    expect(chunkedNodes).toEqual([]);
+  });
+
+  it("uses shallow result when depth=1 for small nodes", async () => {
+    const node: FigmaNode = {
+      id: "1:0", name: "SmallNode", type: "CANVAS",
+      children: [{ id: "1:1", name: "Child", type: "FRAME" }],
+    };
+
+    const fetchSpy = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(mockNodesResponse({ "1:0": node })); // depth=1 check
+
+    const { nodes } = await fetchNodesProactive("token", "fileKey", ["1:0"], 1);
+
+    expect(nodes["1:0"].name).toBe("SmallNode");
+    // Only 1 fetch call — shallow result reused
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
 });
