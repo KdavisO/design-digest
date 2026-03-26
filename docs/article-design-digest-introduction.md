@@ -135,10 +135,17 @@ const message = await client.messages.create({
   messages: [
     {
       role: "user",
-      content: `You are a design-to-engineering change analyst.
-Summarize the following Figma design changes for frontend engineers.
-Focus on implementation impact.
-...`,
+      content: `You are a design-to-engineering change analyst. Summarize the following Figma design changes for frontend engineers. Focus on implementation impact.
+
+Changes detected:
+${changesText}
+
+Provide:
+1. A brief summary of what changed (2-3 sentences)
+2. Implementation impact (what frontend code might need updating)
+3. Priority level (high/medium/low)
+
+Be concise and actionable. Respond in the same language as the node names.`,
     },
   ],
 });
