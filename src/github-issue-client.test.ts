@@ -262,6 +262,23 @@ describe("findExistingGitHubIssue", () => {
     const result = findExistingGitHubIssue(issues, "[DesignDigest] abc123 node:1:2");
     expect(result).toBeNull();
   });
+
+  it("matches marker in body with \\r\\n line endings", () => {
+    const issues = [
+      {
+        number: 50,
+        title: "[DesignDigest] changes",
+        html_url: "https://github.com/test/repo/issues/50",
+        body: "[DesignDigest] abc123 node:1:2\r\n\r\nDescription" as string | null,
+      },
+    ];
+    const result = findExistingGitHubIssue(issues, "[DesignDigest] abc123 node:1:2");
+    expect(result).toEqual({
+      number: 50,
+      title: "[DesignDigest] changes",
+      html_url: "https://github.com/test/repo/issues/50",
+    });
+  });
 });
 
 describe("createGitHubIssue", () => {

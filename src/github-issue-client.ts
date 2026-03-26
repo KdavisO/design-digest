@@ -87,7 +87,7 @@ export function findExistingGitHubIssue(
   marker: string,
 ): GitHubIssue | null {
   const escapedMarker = marker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const markerRegex = new RegExp(`(^|\\n)${escapedMarker}(\\n|$)`);
+  const markerRegex = new RegExp(`(^|\\r?\\n)${escapedMarker}(\\r?\\n|$)`);
   const match = openIssues.find(
     (issue) => issue.body != null && markerRegex.test(issue.body),
   );

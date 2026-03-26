@@ -156,7 +156,7 @@ describe("findExistingIssue", () => {
     expect(result).toEqual(mockIssue);
   });
 
-  it("passes full marker as keyword to API", async () => {
+  it("passes full marker as keyword to API with open status filter", async () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
       new Response(JSON.stringify([]), { status: 200 }),
     );
@@ -165,6 +165,24 @@ describe("findExistingIssue", () => {
 
     const url = fetchSpy.mock.calls[0][0] as string;
     expect(url).toContain("keyword=%5BDesignDigest%5D+abc123+page%3AHome");
+    expect(url).toContain("statusId%5B%5D=1");
+    expect(url).toContain("statusId%5B%5D=2");
+    expect(url).toContain("statusId%5B%5D=3");
+  });
+
+  it("rejects partial marker matches in description", async () => {
+    const mockIssue = {
+      id: 1,
+      issueKey: "TEST-1",
+      summary: "changes",
+      description: "[DesignDigest] abc123 node:1:23\n\ntest description",
+    };
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(JSON.stringify([mockIssue]), { status: 200 }),
+    );
+
+    const result = await findExistingIssue(mockConfig, "[DesignDigest] abc123 node:1:2");
+    expect(result).toBeNull();
   });
 
   it("throws on API error", async () => {

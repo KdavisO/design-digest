@@ -28,6 +28,7 @@ interface BacklogIssueListItem {
   issueKey: string;
   summary: string;
   description: string;
+  status?: { id: number; name: string };
 }
 
 function baseUrl(spaceId: string): string {
@@ -42,14 +43,20 @@ export async function findExistingIssue(
   config: BacklogConfig,
   marker: string,
 ): Promise<BacklogIssue | null> {
+  // Backlog statuses 1=Open, 2=In Progress, 3=Resolved — exclude 4=Closed
+  const OPEN_STATUS_IDS = ["1", "2", "3"];
+
   const params = new URLSearchParams({
     apiKey: config.apiKey,
     "projectId[]": config.projectId,
     keyword: marker,
-    count: "1",
+    count: "20",
     sort: "created",
     order: "desc",
   });
+  for (const statusId of OPEN_STATUS_IDS) {
+    params.append("statusId[]", statusId);
+  }
 
   const url = `${baseUrl(config.spaceId)}/issues?${params}`;
   const response = await fetch(url);
@@ -64,12 +71,20 @@ export async function findExistingIssue(
   const issues: BacklogIssueListItem[] = await response.json();
   if (issues.length === 0) return null;
 
-  const issue = issues[0];
+  // Validate marker exact line match in description to prevent partial matches
+  // (e.g., "node:1:2" matching "node:1:23")
+  const escapedMarker = marker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const markerRegex = new RegExp(`(^|\\r?\\n)${escapedMarker}(\\r?\\n|$)`);
+  const match = issues.find(
+    (issue) => issue.description != null && markerRegex.test(issue.description),
+  );
+  if (!match) return null;
+
   return {
-    id: issue.id,
-    issueKey: issue.issueKey,
-    summary: issue.summary,
-    description: issue.description,
+    id: match.id,
+    issueKey: match.issueKey,
+    summary: match.summary,
+    description: match.description,
   };
 }
 
@@ -175,7 +190,7 @@ export function formatBacklogDescription(
           break;
         case "modified":
           lines.push(
-            `- Modified: ${change.nodeName}.${change.property ?? ""}: ${formatVal(change.oldValue)} → ${formatVal(change.newValue)}`,
+            `- Modified: ${change.nodeName}${change.property ? `.${change.property}` : ""}: ${formatVal(change.oldValue)} → ${formatVal(change.newValue)}`,
           );
           break;
       }
@@ -223,7 +238,7 @@ export function formatBacklogComment(
           lines.push(`- Renamed: ${String(change.oldValue)} → ${String(change.newValue)}`);
           break;
         case "modified":
-          lines.push(`- Modified: ${change.nodeName}.${change.property ?? ""}: ${formatVal(change.oldValue)} → ${formatVal(change.newValue)}`);
+          lines.push(`- Modified: ${change.nodeName}${change.property ? `.${change.property}` : ""}: ${formatVal(change.oldValue)} → ${formatVal(change.newValue)}`);
           break;
       }
     }
