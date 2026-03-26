@@ -4,7 +4,13 @@ Figma MCP 経由でデザイン差分検出を実行する。
 
 1. **環境変数を読み込む**: まず `.env` ファイルから設定を読み込む
    ```bash
-   source .env 2>/dev/null || true
+   set -a
+   if [ -f .env ]; then
+     . .env
+   else
+     echo "'.env' が見つかりません。FIGMA_FILE_KEY などの環境変数を手動で設定してください。" >&2
+   fi
+   set +a
    ```
    `FIGMA_FILE_KEY` が取得できない場合はユーザーにファイルキーを確認する
 
@@ -24,7 +30,7 @@ Figma MCP 経由でデザイン差分検出を実行する。
 
 ## 注意事項
 
-- `.mcp.json` に `figma-developer-mcp` の設定と `FIGMA_API_KEY` が必要
+- `.mcp.json` に `figma-developer-mcp` の設定が必要（Figma Personal Access Token を `FIGMA_API_KEY` 環境変数で指定）
 - MCP レスポンスのデータ構造が REST API と異なる場合があるため、エラー時はレスポンスの構造を確認すること
 - `DRY_RUN=true` で通知なしのテスト実行が可能
 - スナップショットは `./snapshots/` に保存される（初回はベースライン作成のみ）
