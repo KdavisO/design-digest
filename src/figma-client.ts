@@ -78,8 +78,20 @@ export async function fetchNodes(
 }
 
 /**
+ * Calculate an adaptive batch size based on the number of child nodes.
+ * Larger child counts get smaller batch sizes to avoid payload limits.
+ */
+export function adaptiveBatchSize(childCount: number, baseBatchSize: number): number {
+  if (childCount <= 10) return baseBatchSize;
+  if (childCount <= 50) return Math.min(baseBatchSize, 5);
+  if (childCount <= 200) return Math.min(baseBatchSize, 3);
+  return Math.min(baseBatchSize, 2);
+}
+
+/**
  * Fetch nodes in batches to avoid payload size limits on large files.
  * First fetches at depth=1 to get child IDs, then fetches children in batches.
+ * If `precomputedShallow` is provided, skips the initial depth=1 discovery request.
  */
 export async function fetchNodesChunked(
   token: string,
@@ -87,11 +99,12 @@ export async function fetchNodesChunked(
   nodeIds: string[],
   depth?: number,
   batchSize: number = 5,
+  precomputedShallow?: Record<string, FigmaNode>,
 ): Promise<Record<string, FigmaNode>> {
   const result: Record<string, FigmaNode> = {};
 
-  // Batch discovery: fetch all target nodes at depth=1 in one request
-  const shallowAll = await fetchNodes(token, fileKey, nodeIds, 1);
+  // Use precomputed shallow data if available, otherwise fetch at depth=1
+  const shallowAll = precomputedShallow ?? await fetchNodes(token, fileKey, nodeIds, 1);
 
   for (const nodeId of nodeIds) {
     const parentNode = shallowAll[nodeId];
@@ -137,6 +150,203 @@ export async function fetchNodesChunked(
   }
 
   return result;
+}
+
+/** Threshold for proactive chunking: if a page has more children than this, chunk instead of fetching full. */
+const PROACTIVE_CHUNK_THRESHOLD = 50;
+
+/**
+ * Fetch file with proactive chunking for large pages.
+ * Fetches at depth=1 first to estimate size, then decides per-page whether
+ * to fetch the full subtree or chunk by children.
+ * Returns pages keyed by page name, plus targetPageIds for fallback use.
+ */
+export async function fetchFileProactive(
+  token: string,
+  fileKey: string,
+  watchPages: string[],
+  depth?: number,
+  batchSize: number = 5,
+): Promise<{ pages: Record<string, FigmaNode>; chunkedPages: string[]; targetPageIds: string[] }> {
+  // Step 1: Fetch shallow file to get page-level structure
+  const shallowFile = await fetchFile(token, fileKey, 1);
+  const targetPages = filterWatchTargets(shallowFile, watchPages);
+
+  const pages: Record<string, FigmaNode> = {};
+  const chunkedPages: string[] = [];
+
+  // Step 2: Classify pages by complexity
+  const smallPages: FigmaNode[] = [];
+  const largePages: FigmaNode[] = [];
+
+  for (const page of targetPages) {
+    const childCount = page.children?.length ?? 0;
+    if (childCount > PROACTIVE_CHUNK_THRESHOLD) {
+      largePages.push(page);
+    } else {
+      smallPages.push(page);
+    }
+  }
+
+  // Step 3: Fetch small pages together via /nodes endpoint (single request if possible)
+  if (smallPages.length > 0) {
+    if (depth === 1) {
+      // depth=1: the shallow file already contains the full page nodes we need
+      for (const page of smallPages) {
+        pages[page.name || page.id] = page;
+      }
+    } else {
+      const smallPageIds = smallPages.map((p) => p.id);
+      const nodes = await fetchNodes(token, fileKey, smallPageIds, depth);
+      for (const [id, node] of Object.entries(nodes)) {
+        pages[node.name || id] = node;
+      }
+    }
+  }
+
+  // Step 4: Fetch large pages — use shallow result for depth=1, chunked fetch otherwise
+  if (largePages.length > 0) {
+    if (depth === 1) {
+      // depth=1: shallow file already contains the full page nodes
+      for (const page of largePages) {
+        pages[page.name || page.id] = page;
+      }
+    } else {
+      const perPageBatches = largePages.map((page) => {
+        const childCount = page.children?.length ?? 0;
+        return adaptiveBatchSize(childCount, batchSize);
+      });
+      const globalEffectiveBatch = Math.min(...perPageBatches);
+
+      for (const page of largePages) {
+        const childCount = page.children?.length ?? 0;
+        console.log(
+          `  Proactive chunked fetch: ${page.name} (${childCount} children, batch size ${globalEffectiveBatch})`,
+        );
+        chunkedPages.push(page.name);
+      }
+
+      const largePageIds = largePages.map((p) => p.id);
+      // Build precomputed shallow map from the depth=1 file fetch to avoid redundant API call
+      const precomputedShallow: Record<string, FigmaNode> = {};
+      for (const page of largePages) {
+        precomputedShallow[page.id] = page;
+      }
+      const chunkedNodes = await fetchNodesChunked(
+        token,
+        fileKey,
+        largePageIds,
+        depth,
+        globalEffectiveBatch,
+        precomputedShallow,
+      );
+      for (const page of largePages) {
+        const node = chunkedNodes[page.id];
+        if (node) {
+          pages[node.name || page.id] = node;
+        }
+      }
+    }
+  }
+
+  const targetPageIds = targetPages.map((p) => p.id);
+  return { pages, chunkedPages, targetPageIds };
+}
+
+/**
+ * Fetch specific nodes with proactive chunking for large nodes.
+ * Fetches at depth=1 first, then decides per-node whether to chunk.
+ */
+export async function fetchNodesProactive(
+  token: string,
+  fileKey: string,
+  nodeIds: string[],
+  depth?: number,
+  batchSize: number = 5,
+): Promise<{ nodes: Record<string, FigmaNode>; chunkedNodes: string[] }> {
+  // Step 1: Fetch all nodes at depth=1 to check complexity
+  const shallowNodes = await fetchNodes(token, fileKey, nodeIds, 1);
+
+  const result: Record<string, FigmaNode> = {};
+  const chunkedNodeNames: string[] = [];
+  const smallNodeIds: string[] = [];
+  const largeNodeIds: string[] = [];
+
+  for (const nodeId of nodeIds) {
+    const node = shallowNodes[nodeId];
+    if (!node) continue;
+    const childCount = node.children?.length ?? 0;
+    if (childCount > PROACTIVE_CHUNK_THRESHOLD) {
+      largeNodeIds.push(nodeId);
+    } else {
+      smallNodeIds.push(nodeId);
+    }
+  }
+
+  // Step 2: Fetch small nodes in a single request
+  if (smallNodeIds.length > 0) {
+    // If depth=1, we already have the data from the shallow fetch
+    if (depth === 1) {
+      for (const id of smallNodeIds) {
+        if (shallowNodes[id]) result[id] = shallowNodes[id];
+      }
+    } else {
+      const nodes = await fetchNodes(token, fileKey, smallNodeIds, depth);
+      for (const [id, node] of Object.entries(nodes)) {
+        result[id] = node;
+      }
+    }
+  }
+
+  // Step 3: Fetch large nodes
+  if (largeNodeIds.length > 0) {
+    // For depth=1, reuse shallow nodes directly (no extra API calls)
+    if (depth === 1) {
+      for (const nodeId of largeNodeIds) {
+        const node = shallowNodes[nodeId];
+        if (node) {
+          result[nodeId] = node;
+        }
+      }
+    } else {
+      // Batch all large nodes into a single fetchNodesChunked call
+      const perNodeBatches = largeNodeIds.map((nodeId) => {
+        const childCount = shallowNodes[nodeId]?.children?.length ?? 0;
+        return adaptiveBatchSize(childCount, batchSize);
+      });
+      const globalEffectiveBatch = Math.min(...perNodeBatches);
+
+      for (const nodeId of largeNodeIds) {
+        const node = shallowNodes[nodeId];
+        const childCount = node?.children?.length ?? 0;
+        console.log(
+          `  Proactive chunked fetch: ${node?.name ?? nodeId} (${childCount} children, batch size ${globalEffectiveBatch})`,
+        );
+        chunkedNodeNames.push(node?.name ?? nodeId);
+      }
+
+      // Build precomputed shallow map to avoid redundant depth=1 fetch
+      const precomputedShallow: Record<string, FigmaNode> = {};
+      for (const nodeId of largeNodeIds) {
+        if (shallowNodes[nodeId]) precomputedShallow[nodeId] = shallowNodes[nodeId];
+      }
+      const chunkedNodes = await fetchNodesChunked(
+        token,
+        fileKey,
+        largeNodeIds,
+        depth,
+        globalEffectiveBatch,
+        precomputedShallow,
+      );
+      for (const nodeId of largeNodeIds) {
+        if (chunkedNodes[nodeId]) {
+          result[nodeId] = chunkedNodes[nodeId];
+        }
+      }
+    }
+  }
+
+  return { nodes: result, chunkedNodes: chunkedNodeNames };
 }
 
 /**
