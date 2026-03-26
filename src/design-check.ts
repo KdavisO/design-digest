@@ -9,7 +9,7 @@
  * 2. Normalizes it via FigmaMcpAdapter
  * 3. Compares with the previous snapshot (if any)
  * 4. Outputs the diff report
- * 5. Sends notifications (Slack / GitHub Issue / Backlog) unless DRY_RUN=true
+ * 5. Sends Slack notification unless DRY_RUN=true
  */
 import "dotenv/config";
 import { readFile } from "node:fs/promises";
@@ -49,8 +49,13 @@ function parseArgs(): CliArgs {
     process.exit(1);
   }
 
-  // Default file key from env or derive from input filename
-  fileKey ??= process.env.FIGMA_FILE_KEY?.split(",")[0]?.trim() ?? "mcp-check";
+  // Require file key from args or env
+  fileKey ??= process.env.FIGMA_FILE_KEY?.split(",")[0]?.trim();
+
+  if (!fileKey) {
+    console.error("Error: --file-key is required (or set FIGMA_FILE_KEY env var)");
+    process.exit(1);
+  }
 
   return { inputPath, fileKey };
 }
@@ -96,20 +101,24 @@ async function main(): Promise<void> {
   if (changes.length === 0) {
     console.log("\n✅ No changes detected.");
     if (!dryRun && slackWebhookUrl) {
-      await sendSlackNotification(slackWebhookUrl, {
-        text: "✅ No changes detected (MCP check)",
-        blocks: [
-          {
-            type: "header",
-            text: { type: "plain_text", text: "✅ No changes detected (MCP)", emoji: true },
-          },
-          {
-            type: "section",
-            text: { type: "mrkdwn", text: "MCP-based design check: no changes found." },
-          },
-        ],
-      });
-      console.log("Slack notification sent (no changes).");
+      try {
+        await sendSlackNotification(slackWebhookUrl, {
+          text: "✅ No changes detected (MCP check)",
+          blocks: [
+            {
+              type: "header",
+              text: { type: "plain_text", text: "✅ No changes detected (MCP)", emoji: true },
+            },
+            {
+              type: "section",
+              text: { type: "mrkdwn", text: "MCP-based design check: no changes found." },
+            },
+          ],
+        });
+        console.log("Slack notification sent (no changes).");
+      } catch (err) {
+        console.warn("Slack notification failed (no changes):", err);
+      }
     }
     console.log("Done.");
     return;
