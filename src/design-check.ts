@@ -84,10 +84,14 @@ async function main(): Promise<void> {
   const mcpResponse: McpFigmaFileResponse = JSON.parse(rawData);
 
   // 2. Normalize via adapter
+  const watchNodeIds =
+    process.env.FIGMA_WATCH_NODE_IDS?.split(",")?.map((s) => s.trim())?.filter(Boolean) ?? [];
   const watchPages =
     process.env.FIGMA_WATCH_PAGES?.split(",")?.map((s) => s.trim())?.filter(Boolean) ?? [];
   const adapter = FigmaMcpAdapter.fromMcpResponse(mcpResponse);
-  const pages = await adapter.fetchPages(fileKey, { watchPages });
+  const pages = watchNodeIds.length > 0
+    ? await adapter.fetchPages(fileKey, { watchNodeIds })
+    : await adapter.fetchPages(fileKey, { watchPages });
 
   console.log(`  Fetched ${Object.keys(pages).length} page(s) via MCP`);
 
@@ -156,12 +160,22 @@ async function main(): Promise<void> {
   // 7. Send Slack notification
   if (!dryRun && slackWebhookUrl) {
     console.log("\nSending Slack notification...");
-    const blocks = formatSlackBlocks(fileKey, changes, undefined, pageSummaries);
+    const MAX_BLOCKS = 50;
+    let blocks = formatSlackBlocks(fileKey, changes, undefined, pageSummaries);
+    if (blocks.length > MAX_BLOCKS) {
+      blocks = blocks.slice(0, MAX_BLOCKS - 1);
+      blocks.push({
+        type: "context",
+        elements: [{ type: "mrkdwn", text: `⚠️ Output truncated (${MAX_BLOCKS} block limit). See full report in logs.` }],
+      });
+    }
     const fallbackText = formatSlackReport(fileKey, changes);
     await sendSlackNotification(slackWebhookUrl, { text: fallbackText, blocks });
     console.log("Slack notification sent.");
   } else if (dryRun) {
     console.log("\nDry run mode — skipping notifications.");
+  } else if (!slackWebhookUrl) {
+    console.log("\nSLACK_WEBHOOK_URL not set — skipping Slack notification.");
   }
 
   console.log("Done.");
