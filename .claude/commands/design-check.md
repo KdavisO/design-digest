@@ -18,7 +18,7 @@ Figma MCP 経由でデザイン差分検出を実行する。
 
 3. **差分検出スクリプトを実行**: `design-check.ts` は内部で `dotenv/config` を使い `.env` を自動読み込みするため、追加の env 読み込みは不要
    ```bash
-   tsx src/design-check.ts --input /tmp/design-digest-mcp-response.json --file-key <手順1で取得したFIGMA_FILE_KEY>
+   tsx src/design-check.ts --input /tmp/design-digest-mcp-response.json --file-key <手順1で選択した単一のFIGMA_FILE_KEY>
    ```
 
 4. **結果を報告**: スクリプトの出力をユーザーに表示する
