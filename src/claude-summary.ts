@@ -19,11 +19,27 @@ export async function generatePageSummaries(
     }),
   );
 
-  for (const result of settled) {
+  const failedPages: string[] = [];
+
+  for (let i = 0; i < settled.length; i++) {
+    const result = settled[i];
     if (result.status === "fulfilled") {
       results.set(result.value.pageName, result.value.summary);
+    } else {
+      failedPages.push(entries[i][0]);
     }
-    // Failures are silently skipped — the page just won't have a summary
+  }
+
+  if (failedPages.length === entries.length && entries.length > 0) {
+    throw new Error(
+      `Failed to generate summaries for all pages: ${failedPages.join(", ")}`,
+    );
+  }
+
+  if (failedPages.length > 0) {
+    console.warn(
+      `Failed to generate summaries for some pages: ${failedPages.join(", ")}`,
+    );
   }
 
   return results;

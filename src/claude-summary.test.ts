@@ -24,6 +24,7 @@ describe("generatePageSummaries", () => {
 
   it("isolates failures — one page failing does not affect others", async () => {
     let callCount = 0;
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     const mockGenerate = vi.fn().mockImplementation(async () => {
       callCount++;
       if (callCount === 1) {
@@ -45,6 +46,27 @@ describe("generatePageSummaries", () => {
     expect(result.size).toBe(1);
     expect(result.has("FailPage")).toBe(false);
     expect(result.get("SuccessPage")).toBe("Success summary");
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("FailPage"),
+    );
+    warnSpy.mockRestore();
+  });
+
+  it("throws when all pages fail", async () => {
+    const mockGenerate = vi.fn().mockRejectedValue(new Error("API error"));
+
+    const changesByPage: Record<string, ChangeEntry[]> = {
+      Page1: [
+        { pageName: "Page1", nodeId: "1:1", nodeName: "A", nodeType: "FRAME", kind: "added" },
+      ],
+      Page2: [
+        { pageName: "Page2", nodeId: "2:1", nodeName: "B", nodeType: "FRAME", kind: "added" },
+      ],
+    };
+
+    await expect(
+      generatePageSummaries("fake-key", changesByPage, mockGenerate),
+    ).rejects.toThrow("Failed to generate summaries for all pages");
   });
 
   it("returns empty map for empty input", async () => {

@@ -479,12 +479,14 @@ export function formatSlackBlocks(
     // Per-page AI summary (inserted right after the page's changes)
     const aiPageSummary = pageSummaries?.get(pageName);
     if (aiPageSummary) {
+      const SUMMARY_PREFIX = "💡 ";
       const slackSummary = convertMarkdownToSlackMrkdwn(aiPageSummary);
-      const summaryChunks = chunkLines(slackSummary.split("\n"), 3000);
+      // Reserve space for the prefix to stay within Slack's 3000-char block limit
+      const summaryChunks = chunkLines(slackSummary.split("\n"), 3000 - SUMMARY_PREFIX.length);
       for (const chunk of summaryChunks) {
         blocks.push({
           type: "section",
-          text: { type: "mrkdwn", text: `💡 ${chunk}` },
+          text: { type: "mrkdwn", text: `${SUMMARY_PREFIX}${chunk}` },
         });
       }
     }

@@ -18,6 +18,7 @@ import {
   formatSlackBlocks,
   formatSlackReport,
   groupByPage,
+  convertMarkdownToSlackMrkdwn,
 } from "./diff-engine.js";
 import { generateSummary, generatePageSummaries } from "./claude-summary.js";
 import { sendSlackNotification } from "./notify.js";
@@ -249,19 +250,23 @@ async function main(): Promise<void> {
     return;
   }
 
-  // Optional: AI summary (per-page)
-  let pageSummariesMap: Map<string, string> | undefined;
+  // Optional: AI summary (per-file, per-page)
+  const perFileSummaries = new Map<string, Map<string, string>>();
   if (config.claudeSummaryEnabled && config.anthropicApiKey) {
     console.log("\nGenerating AI summaries (per page)...");
-    try {
-      const changesByPage = groupByPage(totalChanges);
-      pageSummariesMap = await generatePageSummaries(config.anthropicApiKey, changesByPage);
-      for (const [pageName, summary] of pageSummariesMap) {
-        console.log(`\n--- AI Summary: ${pageName} ---`);
-        console.log(summary);
+    for (const { fileKey, changes } of allChanges) {
+      if (!changes.length) continue;
+      try {
+        const changesByPage = groupByPage(changes);
+        const fileSummaries = await generatePageSummaries(config.anthropicApiKey, changesByPage);
+        perFileSummaries.set(fileKey, fileSummaries);
+        for (const [pageName, summary] of fileSummaries) {
+          console.log(`\n--- AI Summary: ${fileKey} / ${pageName} ---`);
+          console.log(summary);
+        }
+      } catch (err) {
+        console.warn(`AI summary generation failed for ${fileKey}:`, err);
       }
-    } catch (err) {
-      console.warn("AI summary generation failed:", err);
     }
   }
 
@@ -273,7 +278,7 @@ async function main(): Promise<void> {
     const MAX_BLOCKS = 50;
     const fileResults = allChanges.filter((r) => r.changes.length > 0);
     let blocks = fileResults.flatMap((r, i) => {
-      const fileBlocks = formatSlackBlocks(r.fileKey, r.changes, r.editors, pageSummariesMap);
+      const fileBlocks = formatSlackBlocks(r.fileKey, r.changes, r.editors, perFileSummaries.get(r.fileKey));
       return i < fileResults.length - 1
         ? [...fileBlocks, { type: "divider" as const }]
         : fileBlocks;
@@ -291,7 +296,15 @@ async function main(): Promise<void> {
     // Plain text fallback for notifications/emails
     const fallbackText = allChanges
       .filter((r) => r.changes.length > 0)
-      .map((r) => formatSlackReport(r.fileKey, r.changes, r.editors))
+      .map((r) => {
+        const baseReport = formatSlackReport(r.fileKey, r.changes, r.editors);
+        const fileSummaries = perFileSummaries.get(r.fileKey);
+        if (!fileSummaries || fileSummaries.size === 0) return baseReport;
+        const summaryLines = [...fileSummaries.entries()]
+          .map(([pageName, summary]) => `💡 ${pageName}: ${convertMarkdownToSlackMrkdwn(summary)}`)
+          .join("\n");
+        return `${baseReport}\n\n${summaryLines}`;
+      })
       .join("\n---\n");
 
     await sendSlackNotification(config.slackWebhookUrl, {
