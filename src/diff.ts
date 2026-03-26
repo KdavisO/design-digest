@@ -269,11 +269,15 @@ async function main(): Promise<void> {
   if (!config.dryRun && config.slackWebhookUrl) {
     console.log("\nSending Slack notification...");
 
-    // Build Block Kit blocks for all files
+    // Build Block Kit blocks for all files, inserting dividers between file reports
     const MAX_BLOCKS = 50;
-    let blocks = allChanges
-      .filter((r) => r.changes.length > 0)
-      .flatMap((r) => formatSlackBlocks(r.fileKey, r.changes, r.editors));
+    const fileResults = allChanges.filter((r) => r.changes.length > 0);
+    let blocks = fileResults.flatMap((r, i) => {
+      const fileBlocks = formatSlackBlocks(r.fileKey, r.changes, r.editors);
+      return i < fileResults.length - 1
+        ? [...fileBlocks, { type: "divider" as const }]
+        : fileBlocks;
+    });
 
     if (slackSummary) {
       blocks.push({ type: "divider" });

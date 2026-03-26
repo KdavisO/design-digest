@@ -390,6 +390,56 @@ describe("formatConsoleReport", () => {
     const report = formatConsoleReport("abc123", changes);
     expect(report).toContain("7 changes");
   });
+
+  it("includes per-page summary counts", () => {
+    const changes = [
+      {
+        pageName: "Home",
+        nodeId: "1",
+        nodeName: "A",
+        nodeType: "FRAME",
+        kind: "added" as const,
+      },
+      {
+        pageName: "Home",
+        nodeId: "2",
+        nodeName: "B",
+        nodeType: "FRAME",
+        kind: "deleted" as const,
+      },
+      {
+        pageName: "Settings",
+        nodeId: "3",
+        nodeName: "C",
+        nodeType: "TEXT",
+        kind: "modified" as const,
+        property: "fontSize",
+        oldValue: 14,
+        newValue: 16,
+      },
+    ];
+    const report = formatConsoleReport("abc123", changes);
+    // Verify per-page summaries appear after their respective page headers
+    const homeIndex = report.search(/^📄 Home/m);
+    const settingsIndex = report.search(/^📄 Settings/m);
+    expect(homeIndex).toBeGreaterThanOrEqual(0);
+    expect(settingsIndex).toBeGreaterThanOrEqual(0);
+    expect(homeIndex).toBeLessThan(settingsIndex);
+
+    // "1 added" should appear between Home and Settings headers
+    const homeAddedIndex = report.indexOf("1 added", homeIndex);
+    expect(homeAddedIndex).toBeGreaterThan(homeIndex);
+    expect(homeAddedIndex).toBeLessThan(settingsIndex);
+
+    // "1 deleted" should appear between Home and Settings headers
+    const homeDeletedIndex = report.indexOf("1 deleted", homeIndex);
+    expect(homeDeletedIndex).toBeGreaterThan(homeIndex);
+    expect(homeDeletedIndex).toBeLessThan(settingsIndex);
+
+    // "1 modified" should appear after Settings header
+    const settingsModifiedIndex = report.indexOf("1 modified", settingsIndex);
+    expect(settingsModifiedIndex).toBeGreaterThan(settingsIndex);
+  });
 });
 
 describe("formatSlackReport", () => {
@@ -409,6 +459,41 @@ describe("formatSlackReport", () => {
     ];
     const report = formatSlackReport("abc123", changes);
     expect(report).toContain("figma.com/design/abc123");
+  });
+
+  it("includes per-page summary counts", () => {
+    const changes = [
+      {
+        pageName: "Home",
+        nodeId: "1",
+        nodeName: "A",
+        nodeType: "FRAME",
+        kind: "added" as const,
+      },
+      {
+        pageName: "Settings",
+        nodeId: "2",
+        nodeName: "B",
+        nodeType: "FRAME",
+        kind: "deleted" as const,
+      },
+    ];
+    const report = formatSlackReport("abc123", changes);
+    // Verify per-page summaries appear after their respective page headers
+    const homeIndex = report.indexOf("*Home*");
+    const settingsIndex = report.indexOf("*Settings*");
+    expect(homeIndex).toBeGreaterThanOrEqual(0);
+    expect(settingsIndex).toBeGreaterThanOrEqual(0);
+    expect(homeIndex).toBeLessThan(settingsIndex);
+
+    // "1 added" should appear between Home and Settings headers
+    const homeAddedIndex = report.indexOf("1 added", homeIndex);
+    expect(homeAddedIndex).toBeGreaterThan(homeIndex);
+    expect(homeAddedIndex).toBeLessThan(settingsIndex);
+
+    // "1 deleted" should appear after Settings header
+    const settingsDeletedIndex = report.indexOf("1 deleted", settingsIndex);
+    expect(settingsDeletedIndex).toBeGreaterThan(settingsIndex);
   });
 });
 
@@ -466,7 +551,7 @@ describe("formatSlackBlocks", () => {
     expect(sections[1].text!.text).toBe("*Settings*");
   });
 
-  it("includes context block with summary counts", () => {
+  it("includes per-page context block with summary counts", () => {
     const changes = [
       {
         pageName: "Home",
@@ -494,15 +579,17 @@ describe("formatSlackBlocks", () => {
       },
     ];
     const blocks = formatSlackBlocks("abc123", changes);
-    const context = blocks.find((b) => b.type === "context");
-    expect(context).toBeDefined();
-    const text = context!.elements![0].text;
+    const contextBlocks = blocks.filter(
+      (b) => b.type === "context" && b.elements?.some((e) => e.text.includes("added")),
+    );
+    expect(contextBlocks).toHaveLength(1);
+    const text = contextBlocks[0].elements![0].text;
     expect(text).toContain("1 added");
     expect(text).toContain("1 deleted");
     expect(text).toContain("1 modified");
   });
 
-  it("includes renamed count in context", () => {
+  it("includes per-page renamed count in context", () => {
     const changes = [
       {
         pageName: "Home",
@@ -516,8 +603,87 @@ describe("formatSlackBlocks", () => {
       },
     ];
     const blocks = formatSlackBlocks("abc123", changes);
-    const context = blocks.find((b) => b.type === "context");
-    expect(context!.elements![0].text).toContain("1 renamed");
+    const contextBlocks = blocks.filter(
+      (b) => b.type === "context" && b.elements?.some((e) => e.text.includes("renamed")),
+    );
+    expect(contextBlocks).toHaveLength(1);
+    expect(contextBlocks[0].elements![0].text).toContain("1 renamed");
+  });
+
+  it("shows separate per-page summary counts for multi-page changes", () => {
+    const changes = [
+      {
+        pageName: "Home",
+        nodeId: "1",
+        nodeName: "A",
+        nodeType: "FRAME",
+        kind: "added" as const,
+      },
+      {
+        pageName: "Home",
+        nodeId: "2",
+        nodeName: "B",
+        nodeType: "FRAME",
+        kind: "added" as const,
+      },
+      {
+        pageName: "Settings",
+        nodeId: "3",
+        nodeName: "C",
+        nodeType: "FRAME",
+        kind: "deleted" as const,
+      },
+    ];
+    const blocks = formatSlackBlocks("abc123", changes);
+    const contextBlocks = blocks.filter(
+      (b) => b.type === "context" && b.elements?.some((e) =>
+        e.text.includes("added") || e.text.includes("deleted"),
+      ),
+    );
+    expect(contextBlocks).toHaveLength(2);
+    expect(contextBlocks[0].elements![0].text).toContain("2 added");
+    expect(contextBlocks[0].elements![0].text).not.toContain("deleted");
+    expect(contextBlocks[1].elements![0].text).toContain("1 deleted");
+    expect(contextBlocks[1].elements![0].text).not.toContain("added");
+  });
+
+  it("does not end with a trailing divider", () => {
+    const changes = [
+      {
+        pageName: "Home",
+        nodeId: "1",
+        nodeName: "A",
+        nodeType: "FRAME",
+        kind: "added" as const,
+      },
+    ];
+    const blocks = formatSlackBlocks("abc123", changes);
+    expect(blocks[blocks.length - 1].type).not.toBe("divider");
+  });
+
+  it("uses dividers between pages but not after the last page", () => {
+    const changes = [
+      {
+        pageName: "Home",
+        nodeId: "1",
+        nodeName: "A",
+        nodeType: "FRAME",
+        kind: "added" as const,
+      },
+      {
+        pageName: "Settings",
+        nodeId: "2",
+        nodeName: "B",
+        nodeType: "FRAME",
+        kind: "deleted" as const,
+      },
+    ];
+    const blocks = formatSlackBlocks("abc123", changes);
+    // Last block should NOT be a divider (dividers only appear between pages and after the header)
+    expect(blocks[blocks.length - 1].type).not.toBe("divider");
+    // Should have dividers: one after header section, one between the two pages
+    const dividers = blocks.filter((b) => b.type === "divider");
+    expect(dividers).toHaveLength(2);
   });
 
   it("aggregates when same node has more than 5 changes", () => {
