@@ -74,7 +74,8 @@ async function main(): Promise<void> {
   const mcpResponse: McpFigmaFileResponse = JSON.parse(rawData);
 
   // 2. Normalize via adapter
-  const watchPages = process.env.FIGMA_WATCH_PAGES?.split(",").map((s) => s.trim()).filter(Boolean) ?? [];
+  const watchPages =
+    process.env.FIGMA_WATCH_PAGES?.split(",")?.map((s) => s.trim()).filter(Boolean) ?? [];
   const adapter = FigmaMcpAdapter.fromMcpResponse(mcpResponse);
   const pages = await adapter.fetchPages(fileKey, { watchPages });
 
