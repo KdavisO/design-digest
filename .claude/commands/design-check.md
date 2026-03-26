@@ -2,34 +2,26 @@ Figma MCP 経由でデザイン差分検出を実行する。
 
 ## 手順
 
-1. **環境変数を読み込む**: `.env` ファイルから設定を読み込む（存在しない場合は現在の環境変数をそのまま利用）
+1. **環境変数を読み込む**: Bash ツールで `.env` ファイルを読み込み、必要な値を取得する
    ```bash
-   set -a
-   if [ -f .env ]; then
-     . .env || { echo "'.env' の読み込みに失敗しました（構文エラー等）。内容を確認してください。" >&2; exit 1; }
-   fi
-   set +a
-
-   if [ -z "${FIGMA_FILE_KEY:-}" ]; then
-     echo "FIGMA_FILE_KEY が設定されていません。.env に記載するか、環境変数として設定してください。" >&2
-     exit 1
-   fi
+   [ -f .env ] && { set -a; if ! . .env; then echo "ERROR: .env の読み込みに失敗しました。ファイルの構文を確認してください。" >&2; set +a; exit 1; fi; set +a; }; if [ -z "${FIGMA_FILE_KEY:-}" ]; then echo "ERROR: FIGMA_FILE_KEY が未設定です。.env を確認するか環境変数を手動で設定してください。" >&2; exit 1; fi && echo "FIGMA_FILE_KEY=$FIGMA_FILE_KEY" && echo "FIGMA_WATCH_NODE_IDS=${FIGMA_WATCH_NODE_IDS:-}"
    ```
+   - このコマンドの出力から `FIGMA_FILE_KEY` と `FIGMA_WATCH_NODE_IDS` の値を記憶する
+   - `.env` が存在しない場合は環境変数をそのまま利用する（`.env` は必須ではない）
+   - `FIGMA_FILE_KEY` が複数キー（カンマ区切り）の場合は、最初のキーを使用するか、ユーザーにどのキーを使うか確認する
 
 2. **Figma MCP でファイルデータを取得**: 利用可能な Figma MCP ツールでデータを取得する
    - `use_figma`（Anthropic 内蔵）または `get_figma_data`（figma-developer-mcp）のいずれかを使用
-   - fileKey を指定してファイルのノードツリーを取得する
+   - 手順1で取得した `FIGMA_FILE_KEY` を fileKey として指定し、ファイルのノードツリーを取得する
    - `FIGMA_WATCH_NODE_IDS` が設定されている場合: 指定ノードIDを対象に取得する
-   - レスポンスの JSON 全体を一時ファイルに保存する
+   - MCP ツールのレスポンス JSON 全体を Write ツールで `/tmp/design-digest-mcp-response.json` に書き出す
 
-3. **一時ファイルに保存**: MCP レスポンスを `/tmp/design-digest-mcp-response.json` に書き出す
-
-4. **差分検出スクリプトを実行**:
+3. **差分検出スクリプトを実行**: `design-check.ts` は内部で `dotenv/config` を使い `.env` を自動読み込みするため、追加の env 読み込みは不要
    ```bash
-   tsx src/design-check.ts --input /tmp/design-digest-mcp-response.json --file-key <ファイルキー>
+   tsx src/design-check.ts --input /tmp/design-digest-mcp-response.json --file-key <手順1で選択した単一のFIGMA_FILE_KEY>
    ```
 
-5. **結果を報告**: スクリプトの出力をユーザーに表示する
+4. **結果を報告**: スクリプトの出力をユーザーに表示する
 
 ## 注意事項
 
