@@ -48,12 +48,6 @@ async function processFile(
   config: Config,
   fileKey: string,
 ): Promise<{ fileKey: string; changes: ChangeEntry[]; editors: FigmaUser[]; baselineCreated: boolean; pageNames?: string[]; fileName?: string }> {
-  // Fetch file name from Figma API (lightweight call, falls back to undefined on failure)
-  const fileName = await fetchFileName(config.figmaToken, fileKey);
-  if (fileName) {
-    console.log(`  File name: ${fileName}`);
-  }
-
   // Load previous snapshot
   const previous = await loadSnapshot(config.snapshotDir, fileKey);
 
@@ -71,7 +65,7 @@ async function processFile(
       latestVersionId = versionCheck.latestVersionId;
       if (!versionCheck.changed) {
         console.log("  No version change detected — skipping snapshot comparison.");
-        return { fileKey, changes: [], editors: [], baselineCreated: false, fileName };
+        return { fileKey, changes: [], editors: [], baselineCreated: false };
       }
       console.log("  Version changed — fetching current state.");
     } catch (err) {
@@ -125,6 +119,8 @@ async function processFile(
 
   if (!previous) {
     console.log("  No previous snapshot found. First run — baseline saved.");
+    const fileName = await fetchFileName(config.figmaToken, fileKey);
+    if (fileName) console.log(`  File name: ${fileName}`);
     return { fileKey, changes: [], editors: [], baselineCreated: true, pageNames: Object.keys(pages), fileName };
   }
 
@@ -148,6 +144,13 @@ async function processFile(
   const report = buildReport(fileKey, changes, editors);
 
   console.log(report.summary);
+
+  // Fetch file name only when there are changes to report (avoids unnecessary API call)
+  let fileName: string | undefined;
+  if (changes.length > 0) {
+    fileName = await fetchFileName(config.figmaToken, fileKey);
+    if (fileName) console.log(`  File name: ${fileName}`);
+  }
 
   return { fileKey, changes, editors, baselineCreated: false, fileName };
 }
