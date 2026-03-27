@@ -319,4 +319,246 @@ describe("FigmaMcpAdapter", () => {
     const pages = await adapter.fetchPages("test-key");
     expect(Object.keys(pages)).toEqual([]);
   });
+
+  describe("fromMcpResponses (chunked merging)", () => {
+    it("should merge multiple document responses", async () => {
+      const response1: McpFigmaFileResponse = {
+        document: {
+          id: "0:0",
+          name: "Document",
+          type: "DOCUMENT",
+          children: [
+            { id: "1:1", name: "Page A", type: "CANVAS", children: [{ id: "2:1", name: "Frame A", type: "FRAME" }] },
+          ],
+        },
+      };
+      const response2: McpFigmaFileResponse = {
+        document: {
+          id: "0:0",
+          name: "Document",
+          type: "DOCUMENT",
+          children: [
+            { id: "1:2", name: "Page B", type: "CANVAS", children: [{ id: "2:2", name: "Frame B", type: "FRAME" }] },
+          ],
+        },
+      };
+
+      const adapter = FigmaMcpAdapter.fromMcpResponses([response1, response2]);
+      const pages = await adapter.fetchPages("test-key");
+
+      expect(Object.keys(pages).sort()).toEqual(["Page A", "Page B"]);
+      expect(pages["Page A"].children?.[0]?.name).toBe("Frame A");
+      expect(pages["Page B"].children?.[0]?.name).toBe("Frame B");
+    });
+
+    it("should merge document and node responses", async () => {
+      const docResponse: McpFigmaFileResponse = {
+        document: {
+          id: "0:0",
+          name: "Document",
+          type: "DOCUMENT",
+          children: [
+            { id: "1:1", name: "Page A", type: "CANVAS" },
+          ],
+        },
+      };
+      const nodeResponse: McpFigmaFileResponse = {
+        nodes: {
+          "1:2": { document: { id: "1:2", name: "Page B", type: "CANVAS" } },
+        },
+      };
+
+      const adapter = FigmaMcpAdapter.fromMcpResponses([docResponse, nodeResponse]);
+      const pages = await adapter.fetchPages("test-key");
+
+      expect(Object.keys(pages).sort()).toEqual(["Page A", "Page B"]);
+    });
+
+    it("should override earlier pages with later ones (last-write-wins)", async () => {
+      const response1: McpFigmaFileResponse = {
+        document: {
+          id: "0:0",
+          name: "Document",
+          type: "DOCUMENT",
+          children: [
+            { id: "1:1", name: "Page A", type: "CANVAS", children: [{ id: "2:1", name: "Old Frame", type: "FRAME" }] },
+          ],
+        },
+      };
+      const response2: McpFigmaFileResponse = {
+        document: {
+          id: "0:0",
+          name: "Document",
+          type: "DOCUMENT",
+          children: [
+            { id: "1:1", name: "Page A", type: "CANVAS", children: [{ id: "2:1", name: "New Frame", type: "FRAME" }] },
+          ],
+        },
+      };
+
+      const adapter = FigmaMcpAdapter.fromMcpResponses([response1, response2]);
+      const pages = await adapter.fetchPages("test-key");
+
+      expect(Object.keys(pages)).toEqual(["Page A"]);
+      expect(pages["Page A"].children?.[0]?.name).toBe("New Frame");
+    });
+
+    it("should handle empty responses array", async () => {
+      const adapter = FigmaMcpAdapter.fromMcpResponses([]);
+      const pages = await adapter.fetchPages("test-key");
+      expect(Object.keys(pages)).toEqual([]);
+    });
+
+    it("should handle mix of empty and non-empty responses", async () => {
+      const adapter = FigmaMcpAdapter.fromMcpResponses([
+        {},
+        {
+          document: {
+            id: "0:0",
+            name: "Document",
+            type: "DOCUMENT",
+            children: [{ id: "1:1", name: "Page A", type: "CANVAS" }],
+          },
+        },
+        {},
+      ]);
+      const pages = await adapter.fetchPages("test-key");
+      expect(Object.keys(pages)).toEqual(["Page A"]);
+    });
+  });
+
+  describe("extractPageList", () => {
+    it("should extract page info from document response", () => {
+      const children: FigmaNode[] = [];
+      for (let i = 0; i < 60; i++) {
+        children.push({ id: `child:${i}`, name: `Child ${i}`, type: "FRAME" });
+      }
+      const response: McpFigmaFileResponse = {
+        document: {
+          id: "0:0",
+          name: "Document",
+          type: "DOCUMENT",
+          children: [
+            { id: "1:1", name: "Small Page", type: "CANVAS", children: [{ id: "2:1", name: "Frame", type: "FRAME" }] },
+            { id: "1:2", name: "Large Page", type: "CANVAS", children },
+          ],
+        },
+      };
+
+      const pageList = FigmaMcpAdapter.extractPageList(response);
+
+      expect(pageList).toHaveLength(2);
+      expect(pageList[0]).toEqual({
+        id: "1:1",
+        name: "Small Page",
+        childCount: 1,
+        needsChunking: false,
+      });
+      expect(pageList[1]).toEqual({
+        id: "1:2",
+        name: "Large Page",
+        childCount: 60,
+        needsChunking: true,
+      });
+    });
+
+    it("should extract page info from node response", () => {
+      const response: McpFigmaFileResponse = {
+        nodes: {
+          "1:1": {
+            document: {
+              id: "1:1",
+              name: "Node A",
+              type: "CANVAS",
+              children: [{ id: "2:1", name: "Frame", type: "FRAME" }],
+            },
+          },
+        },
+      };
+
+      const pageList = FigmaMcpAdapter.extractPageList(response);
+      expect(pageList).toHaveLength(1);
+      expect(pageList[0]).toEqual({
+        id: "1:1",
+        name: "Node A",
+        childCount: 1,
+        needsChunking: false,
+      });
+    });
+
+    it("should return empty array for empty response", () => {
+      expect(FigmaMcpAdapter.extractPageList({})).toEqual([]);
+    });
+
+    it("should handle pages with no children", () => {
+      const response: McpFigmaFileResponse = {
+        document: {
+          id: "0:0",
+          name: "Document",
+          type: "DOCUMENT",
+          children: [
+            { id: "1:1", name: "Empty Page", type: "CANVAS" },
+          ],
+        },
+      };
+
+      const pageList = FigmaMcpAdapter.extractPageList(response);
+      expect(pageList[0].childCount).toBe(0);
+      expect(pageList[0].needsChunking).toBe(false);
+    });
+  });
+
+  describe("needsChunking", () => {
+    it("should return false for small files", () => {
+      const response: McpFigmaFileResponse = {
+        document: {
+          id: "0:0",
+          name: "Document",
+          type: "DOCUMENT",
+          children: [
+            { id: "1:1", name: "Page", type: "CANVAS", children: [{ id: "2:1", name: "Frame", type: "FRAME" }] },
+          ],
+        },
+      };
+      expect(FigmaMcpAdapter.needsChunking(response)).toBe(false);
+    });
+
+    it("should return true when a page has many children", () => {
+      const children: FigmaNode[] = [];
+      for (let i = 0; i < 51; i++) {
+        children.push({ id: `child:${i}`, name: `Child ${i}`, type: "FRAME" });
+      }
+      const response: McpFigmaFileResponse = {
+        document: {
+          id: "0:0",
+          name: "Document",
+          type: "DOCUMENT",
+          children: [
+            { id: "1:1", name: "Large Page", type: "CANVAS", children },
+          ],
+        },
+      };
+      expect(FigmaMcpAdapter.needsChunking(response)).toBe(true);
+    });
+
+    it("should return true when there are many pages", () => {
+      const pages: FigmaNode[] = [];
+      for (let i = 0; i < 51; i++) {
+        pages.push({ id: `page:${i}`, name: `Page ${i}`, type: "CANVAS" });
+      }
+      const response: McpFigmaFileResponse = {
+        document: {
+          id: "0:0",
+          name: "Document",
+          type: "DOCUMENT",
+          children: pages,
+        },
+      };
+      expect(FigmaMcpAdapter.needsChunking(response)).toBe(true);
+    });
+
+    it("should return false for empty response", () => {
+      expect(FigmaMcpAdapter.needsChunking({})).toBe(false);
+    });
+  });
 });

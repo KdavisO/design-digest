@@ -153,7 +153,7 @@ export async function fetchNodesChunked(
 }
 
 /** Threshold for proactive chunking: if a page has more children than this, chunk instead of fetching full. */
-const PROACTIVE_CHUNK_THRESHOLD = 50;
+export const PROACTIVE_CHUNK_THRESHOLD = 50;
 
 /**
  * Fetch file with proactive chunking for large pages.

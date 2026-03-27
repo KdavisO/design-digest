@@ -1,5 +1,5 @@
 import type { FigmaNode, FigmaVersion, FigmaUser } from "../figma-client.js";
-import { sanitizeNode } from "../figma-client.js";
+import { sanitizeNode, PROACTIVE_CHUNK_THRESHOLD } from "../figma-client.js";
 import type { FigmaDataAdapter, FetchPagesOptions } from "./figma-data-adapter.js";
 
 /**
@@ -25,6 +25,16 @@ export interface McpFigmaFileResponse {
 }
 
 /**
+ * Page metadata extracted from a shallow MCP response for chunking decisions.
+ */
+export interface McpPageInfo {
+  id: string;
+  name: string;
+  childCount: number;
+  needsChunking: boolean;
+}
+
+/**
  * Adapter that normalizes Figma MCP tool responses into the format
  * expected by the diff engine.
  *
@@ -33,6 +43,12 @@ export interface McpFigmaFileResponse {
  * 2. The response JSON is passed to FigmaMcpAdapter.fromMcpResponse()
  * 3. The adapter normalizes and sanitizes the data
  * 4. fetchPages() returns data compatible with the diff engine
+ *
+ * For large files (100+ pages), use chunked fetching:
+ * 1. Claude calls MCP tool with depth=1 to get page structure
+ * 2. Call extractPageList() to identify pages needing chunked fetch
+ * 3. Claude calls MCP tool per page/batch for large pages
+ * 4. Call fromMcpResponses() to merge all chunk responses
  */
 export class FigmaMcpAdapter implements FigmaDataAdapter {
   readonly name = "MCP";
@@ -47,26 +63,24 @@ export class FigmaMcpAdapter implements FigmaDataAdapter {
    * Handles both full file responses and node-specific responses.
    */
   static fromMcpResponse(response: McpFigmaFileResponse): FigmaMcpAdapter {
-    const pages: Record<string, FigmaNode> = {};
-
-    if (response.document?.children) {
-      // Full file response — extract pages from document.children
-      for (const page of response.document.children) {
-        pages[page.name || page.id] = sanitizeNode(page);
-      }
-    } else if (response.nodes) {
-      // Node-specific response — normalize nodes
-      for (const [id, nodeData] of Object.entries(response.nodes)) {
-        if (nodeData == null) continue;
-        const candidate = isWrappedNode(nodeData)
-          ? nodeData.document
-          : nodeData;
-        if (!isValidNode(candidate)) continue;
-        pages[candidate.name || id] = sanitizeNode(candidate);
-      }
-    }
-
+    const pages = extractPagesFromResponse(response);
     return new FigmaMcpAdapter(pages);
+  }
+
+  /**
+   * Create an adapter by merging multiple MCP responses.
+   * Used for chunked fetching: each response contains a subset of pages/nodes,
+   * and they are merged into a single adapter.
+   *
+   * Later responses override earlier ones for the same page name (last-write-wins).
+   */
+  static fromMcpResponses(responses: McpFigmaFileResponse[]): FigmaMcpAdapter {
+    const merged: Record<string, FigmaNode> = {};
+    for (const response of responses) {
+      const pages = extractPagesFromResponse(response);
+      Object.assign(merged, pages);
+    }
+    return new FigmaMcpAdapter(merged);
   }
 
   /**
@@ -79,6 +93,53 @@ export class FigmaMcpAdapter implements FigmaDataAdapter {
       sanitized[name] = sanitizeNode(node);
     }
     return new FigmaMcpAdapter(sanitized);
+  }
+
+  /**
+   * Extract page metadata from a shallow (depth=1) MCP response.
+   * Returns info about each page including child count and whether it needs chunking.
+   * Use this to decide which pages to fetch individually via separate MCP calls.
+   */
+  static extractPageList(response: McpFigmaFileResponse): McpPageInfo[] {
+    const pages: McpPageInfo[] = [];
+
+    if (response.document?.children) {
+      for (const page of response.document.children) {
+        const childCount = page.children?.length ?? 0;
+        pages.push({
+          id: page.id,
+          name: page.name || page.id,
+          childCount,
+          needsChunking: childCount > PROACTIVE_CHUNK_THRESHOLD,
+        });
+      }
+    } else if (response.nodes) {
+      for (const [id, nodeData] of Object.entries(response.nodes)) {
+        if (nodeData == null) continue;
+        const candidate = isWrappedNode(nodeData) ? nodeData.document : nodeData;
+        if (!isValidNode(candidate)) continue;
+        const childCount = candidate.children?.length ?? 0;
+        pages.push({
+          id: candidate.id,
+          name: candidate.name || id,
+          childCount,
+          needsChunking: childCount > PROACTIVE_CHUNK_THRESHOLD,
+        });
+      }
+    }
+
+    return pages;
+  }
+
+  /**
+   * Check if an MCP response likely needs chunking.
+   * Returns true if any page has more children than the threshold,
+   * or if the total number of top-level nodes exceeds the threshold.
+   */
+  static needsChunking(response: McpFigmaFileResponse): boolean {
+    const pageList = FigmaMcpAdapter.extractPageList(response);
+    if (pageList.length > PROACTIVE_CHUNK_THRESHOLD) return true;
+    return pageList.some((p) => p.needsChunking);
   }
 
   async fetchNodes(
@@ -142,6 +203,28 @@ export class FigmaMcpAdapter implements FigmaDataAdapter {
     }
     return filtered;
   }
+}
+
+/** Extract and sanitize pages from a single MCP response. */
+function extractPagesFromResponse(response: McpFigmaFileResponse): Record<string, FigmaNode> {
+  const pages: Record<string, FigmaNode> = {};
+
+  if (response.document?.children) {
+    for (const page of response.document.children) {
+      pages[page.name || page.id] = sanitizeNode(page);
+    }
+  } else if (response.nodes) {
+    for (const [id, nodeData] of Object.entries(response.nodes)) {
+      if (nodeData == null) continue;
+      const candidate = isWrappedNode(nodeData)
+        ? nodeData.document
+        : nodeData;
+      if (!isValidNode(candidate)) continue;
+      pages[candidate.name || id] = sanitizeNode(candidate);
+    }
+  }
+
+  return pages;
 }
 
 function isWrappedNode(
