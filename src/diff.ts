@@ -188,9 +188,17 @@ async function main(): Promise<void> {
           if (prefix.length + pageList.length <= SLACK_TEXT_LIMIT) {
             text = prefix + pageList;
           } else {
+            // Truncate by whole lines to avoid cutting mid-line or mid-character
             const truncatedNote = "\n(truncated)";
             const available = Math.max(0, SLACK_TEXT_LIMIT - prefix.length - truncatedNote.length);
-            text = prefix + pageList.slice(0, available) + truncatedNote;
+            const lines = pageList.split("\n");
+            let truncated = "";
+            for (const line of lines) {
+              const next = truncated ? truncated + "\n" + line : line;
+              if (next.length > available) break;
+              truncated = next;
+            }
+            text = prefix + (truncated || lines[0]) + truncatedNote;
           }
           baselineBlocks.push({
             type: "section",
