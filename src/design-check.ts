@@ -22,6 +22,7 @@ import { readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { FigmaMcpAdapter } from "./adapters/figma-mcp-adapter.js";
 import type { McpFigmaFileResponse } from "./adapters/figma-mcp-adapter.js";
+import { isPayloadTooLargeError } from "./figma-client.js";
 import { loadSnapshot, saveSnapshot } from "./snapshot.js";
 import {
   detectChanges,
@@ -42,27 +43,21 @@ function parseArgs(): CliArgs {
   const args = process.argv.slice(2);
   const inputPaths: string[] = [];
   let fileKey: string | undefined;
-  let inputDir: string | undefined;
 
   for (let i = 0; i < args.length; i++) {
     if (args[i] === "--input" && args[i + 1]) {
       inputPaths.push(args[++i]);
     } else if (args[i] === "--input-dir" && args[i + 1]) {
-      inputDir = args[++i];
+      // Push dir marker in CLI order so merge order matches argument order
+      inputPaths.push(`__dir__:${args[++i]}`);
     } else if (args[i] === "--file-key" && args[i + 1]) {
       fileKey = args[++i];
     }
   }
 
-  if (inputPaths.length === 0 && !inputDir) {
+  if (inputPaths.length === 0) {
     console.error("Usage: tsx src/design-check.ts --input <path> [--input <path2> ...] [--input-dir <dir>] [--file-key <key>]");
     process.exit(1);
-  }
-
-  // If --input-dir is given, add all .json files from that directory
-  if (inputDir) {
-    // inputDir is resolved later in main() since readdir is async
-    inputPaths.push(`__dir__:${inputDir}`);
   }
 
   // Require file key from args or env
@@ -132,15 +127,6 @@ async function loadMcpResponses(inputPaths: string[]): Promise<McpFigmaFileRespo
   return responses;
 }
 
-function isPayloadTooLargeError(err: unknown): boolean {
-  const message = (err instanceof Error ? err.message : String(err)).toLowerCase();
-  return (
-    message.includes("invalid string length") ||
-    message.includes("allocation failed") ||
-    message.includes("out of memory")
-  );
-}
-
 async function main(): Promise<void> {
   const { inputPaths: rawInputPaths, fileKey } = parseArgs();
   const snapshotDir = process.env.SNAPSHOT_DIR || "./snapshots";
@@ -184,10 +170,17 @@ async function main(): Promise<void> {
   if (!isChunked && responses.length === 1 && FigmaMcpAdapter.needsChunking(responses[0])) {
     const pageList = FigmaMcpAdapter.extractPageList(responses[0]);
     const largePages = pageList.filter((p) => p.needsChunking);
-    console.warn(
-      `  Warning: ${largePages.length} page(s) exceed chunking threshold (${largePages.map((p) => `${p.name}: ${p.childCount} children`).join(", ")}). ` +
-      `Consider using chunked fetching for more reliable results.`,
-    );
+    if (largePages.length > 0) {
+      console.warn(
+        `  Warning: ${largePages.length} page(s) exceed chunking threshold (${largePages.map((p) => `${p.name}: ${p.childCount} children`).join(", ")}). ` +
+        `Consider using chunked fetching for more reliable results.`,
+      );
+    } else {
+      console.warn(
+        `  Warning: File has ${pageList.length} page(s), which triggers the chunking threshold. ` +
+        `Consider using chunked fetching for more reliable results.`,
+      );
+    }
   }
 
   // 3. Load previous snapshot

@@ -425,6 +425,21 @@ export function sanitizeNode<T>(node: T): T {
   return result as T;
 }
 
+/**
+ * Heuristic detection of payload-too-large / OOM-style failures.
+ * Shared across REST adapter (API response errors) and design-check (file parse errors).
+ */
+export function isPayloadTooLargeError(err: unknown): boolean {
+  const message = (err instanceof Error ? err.message : String(err)).toLowerCase();
+  return (
+    message.includes("request too large") ||
+    message.includes("try a smaller request") ||
+    message.includes("invalid string length") ||
+    message.includes("allocation failed") ||
+    message.includes("out of memory")
+  );
+}
+
 async function figmaRequest<T>(url: string, token: string): Promise<T> {
   const maxRetries = 3;
 
