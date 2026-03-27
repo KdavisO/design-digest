@@ -35,7 +35,7 @@ import {
   defaultTitle,
 } from "./backlog-client.js";
 import type { BacklogConfig } from "./backlog-client.js";
-import type { ChangeEntry } from "./diff-engine.js";
+import type { ChangeEntry, SlackBlock } from "./diff-engine.js";
 import type { Config } from "./config.js";
 
 // Uses concrete FigmaRestAdapter (not FigmaDataAdapter interface) because diff.ts
@@ -45,7 +45,7 @@ async function processFile(
   adapter: FigmaRestAdapter,
   config: Config,
   fileKey: string,
-): Promise<{ fileKey: string; changes: ChangeEntry[]; editors: FigmaUser[]; baselineCreated: boolean }> {
+): Promise<{ fileKey: string; changes: ChangeEntry[]; editors: FigmaUser[]; baselineCreated: boolean; pageNames?: string[] }> {
   // Load previous snapshot
   const previous = await loadSnapshot(config.snapshotDir, fileKey);
 
@@ -117,7 +117,7 @@ async function processFile(
 
   if (!previous) {
     console.log("  No previous snapshot found. First run — baseline saved.");
-    return { fileKey, changes: [], editors: [], baselineCreated: true };
+    return { fileKey, changes: [], editors: [], baselineCreated: true, pageNames: Object.keys(pages) };
   }
 
   // Detect changes
@@ -149,7 +149,7 @@ async function main(): Promise<void> {
 
   const config = loadConfig();
   const adapter = new FigmaRestAdapter(config.figmaToken);
-  const allChanges: { fileKey: string; changes: ChangeEntry[]; editors: FigmaUser[]; baselineCreated: boolean }[] = [];
+  const allChanges: { fileKey: string; changes: ChangeEntry[]; editors: FigmaUser[]; baselineCreated: boolean; pageNames?: string[] }[] = [];
 
   for (const fileKey of config.figmaFileKeys) {
     console.log(
@@ -161,14 +161,85 @@ async function main(): Promise<void> {
 
   const totalChanges = allChanges.flatMap((r) => r.changes);
 
+  // Send baseline notification independently of change detection
+  const baselineResults = allChanges.filter((r) => r.baselineCreated);
+  if (baselineResults.length > 0) {
+    if (!config.dryRun && config.slackWebhookUrl) {
+      try {
+        const SLACK_TEXT_LIMIT = 3000;
+        const baselineBlocks: SlackBlock[] = [
+          {
+            type: "header",
+            text: {
+              type: "plain_text",
+              text: "📋 Baseline created — now monitoring",
+              emoji: true,
+            },
+          },
+        ];
+        for (const r of baselineResults) {
+          const figmaUrl = `https://www.figma.com/design/${r.fileKey}`;
+          const names = r.pageNames ?? [];
+          const pageList = names.length > 0
+            ? names.map((p) => `• ${p}`).join("\n")
+            : "(no pages detected)";
+          const prefix = `*<${figmaUrl}|${r.fileKey}>*\nPages:\n`;
+          let text: string;
+          if (prefix.length + pageList.length <= SLACK_TEXT_LIMIT) {
+            text = prefix + pageList;
+          } else {
+            // Truncate by whole lines to avoid cutting mid-line or mid-character
+            const truncatedNote = "\n(truncated)";
+            const available = Math.max(0, SLACK_TEXT_LIMIT - prefix.length - truncatedNote.length);
+            const lines = pageList.split("\n");
+            let truncated = "";
+            for (const line of lines) {
+              const next = truncated ? truncated + "\n" + line : line;
+              if (next.length > available) break;
+              truncated = next;
+            }
+            text = prefix + (truncated || lines[0]) + truncatedNote;
+          }
+          baselineBlocks.push({
+            type: "section",
+            text: { type: "mrkdwn", text },
+          });
+        }
+        // Slack limits messages to 50 blocks — truncate with a note if exceeded
+        const MAX_BASELINE_BLOCKS = 50;
+        let finalBaselineBlocks: SlackBlock[] = baselineBlocks;
+        if (baselineBlocks.length > MAX_BASELINE_BLOCKS) {
+          // Log full baseline details before truncating
+          for (const r of baselineResults) {
+            const names = r.pageNames ?? [];
+            console.log(`  Baseline: ${r.fileKey} — ${names.length} page(s): ${names.join(", ")}`);
+          }
+          finalBaselineBlocks = baselineBlocks.slice(0, MAX_BASELINE_BLOCKS - 1);
+          finalBaselineBlocks.push({
+            type: "context",
+            elements: [{ type: "mrkdwn", text: `⚠️ Output truncated (${MAX_BASELINE_BLOCKS} block limit). Full details logged to console.` }],
+          });
+        }
+        await sendSlackNotification(config.slackWebhookUrl, {
+          text: "📋 Baseline created — now monitoring",
+          blocks: finalBaselineBlocks,
+        });
+        console.log("Slack notification sent (baseline created).");
+      } catch (err) {
+        console.warn("Failed to send Slack notification:", err);
+      }
+    } else if (config.dryRun) {
+      console.log("Baseline created — dry run mode, skipping Slack notification.");
+    } else {
+      console.log("Baseline created — no SLACK_WEBHOOK_URL configured, skipping notification.");
+    }
+  }
+
   if (totalChanges.length === 0) {
-    const isBaseline = allChanges.some((r) => r.baselineCreated);
     console.log("\n✅ No changes detected across all files.");
 
-    // Send "no changes" Slack notification (skip on baseline creation)
-    if (isBaseline) {
-      console.log("Baseline created — skipping Slack notification.");
-    } else if (!config.dryRun && config.slackWebhookUrl) {
+    // Send "no changes" Slack notification (only when no baseline was created)
+    if (baselineResults.length === 0 && !config.dryRun && config.slackWebhookUrl) {
       try {
         await sendSlackNotification(config.slackWebhookUrl, {
           text: "✅ No changes detected",
@@ -194,9 +265,9 @@ async function main(): Promise<void> {
       } catch (err) {
         console.warn("Failed to send Slack notification:", err);
       }
-    } else if (config.dryRun) {
+    } else if (baselineResults.length === 0 && config.dryRun) {
       console.log("Dry run mode — skipping Slack notification.");
-    } else if (!config.slackWebhookUrl) {
+    } else if (baselineResults.length === 0 && !config.slackWebhookUrl) {
       console.log("No SLACK_WEBHOOK_URL configured — skipping notification.");
     }
 
