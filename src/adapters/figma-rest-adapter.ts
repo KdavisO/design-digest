@@ -56,11 +56,7 @@ export class FigmaRestAdapter implements FigmaDataAdapter {
         depth,
         batchSize,
       );
-      const result: Record<string, FigmaNode> = {};
-      for (const [id, node] of Object.entries(nodes)) {
-        result[id] = sanitizeNode(node);
-      }
-      return result;
+      return sanitizeNodesById(nodes);
     } catch (err) {
       if (isPayloadTooLargeError(err)) {
         console.log("  Payload too large — switching to chunked fetch...");
@@ -71,11 +67,7 @@ export class FigmaRestAdapter implements FigmaDataAdapter {
           depth,
           batchSize,
         );
-        const result: Record<string, FigmaNode> = {};
-        for (const [id, node] of Object.entries(nodes)) {
-          result[id] = sanitizeNode(node);
-        }
-        return result;
+        return sanitizeNodesById(nodes);
       }
       throw err;
     }
@@ -190,6 +182,14 @@ export class FigmaRestAdapter implements FigmaDataAdapter {
       throw err;
     }
   }
+}
+
+function sanitizeNodesById(nodes: Record<string, FigmaNode>): Record<string, FigmaNode> {
+  const result: Record<string, FigmaNode> = {};
+  for (const [id, node] of Object.entries(nodes)) {
+    result[id] = sanitizeNode(node);
+  }
+  return result;
 }
 
 function isPayloadTooLargeError(err: unknown): boolean {
