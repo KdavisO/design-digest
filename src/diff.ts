@@ -35,7 +35,7 @@ import {
   defaultTitle,
 } from "./backlog-client.js";
 import type { BacklogConfig } from "./backlog-client.js";
-import type { ChangeEntry } from "./diff-engine.js";
+import type { ChangeEntry, SlackBlock } from "./diff-engine.js";
 import type { Config } from "./config.js";
 
 // Uses concrete FigmaRestAdapter (not FigmaDataAdapter interface) because diff.ts
@@ -45,7 +45,7 @@ async function processFile(
   adapter: FigmaRestAdapter,
   config: Config,
   fileKey: string,
-): Promise<{ fileKey: string; changes: ChangeEntry[]; editors: FigmaUser[]; baselineCreated: boolean }> {
+): Promise<{ fileKey: string; changes: ChangeEntry[]; editors: FigmaUser[]; baselineCreated: boolean; pages?: Record<string, unknown> }> {
   // Load previous snapshot
   const previous = await loadSnapshot(config.snapshotDir, fileKey);
 
@@ -117,7 +117,7 @@ async function processFile(
 
   if (!previous) {
     console.log("  No previous snapshot found. First run — baseline saved.");
-    return { fileKey, changes: [], editors: [], baselineCreated: true };
+    return { fileKey, changes: [], editors: [], baselineCreated: true, pages };
   }
 
   // Detect changes
@@ -149,7 +149,7 @@ async function main(): Promise<void> {
 
   const config = loadConfig();
   const adapter = new FigmaRestAdapter(config.figmaToken);
-  const allChanges: { fileKey: string; changes: ChangeEntry[]; editors: FigmaUser[]; baselineCreated: boolean }[] = [];
+  const allChanges: { fileKey: string; changes: ChangeEntry[]; editors: FigmaUser[]; baselineCreated: boolean; pages?: Record<string, unknown> }[] = [];
 
   for (const fileKey of config.figmaFileKeys) {
     console.log(
@@ -165,9 +165,46 @@ async function main(): Promise<void> {
     const isBaseline = allChanges.some((r) => r.baselineCreated);
     console.log("\n✅ No changes detected across all files.");
 
-    // Send "no changes" Slack notification (skip on baseline creation)
-    if (isBaseline) {
-      console.log("Baseline created — skipping Slack notification.");
+    // Send Slack notification
+    if (isBaseline && !config.dryRun && config.slackWebhookUrl) {
+      // Send "baseline created" notification with file names and page lists
+      try {
+        const baselineBlocks: SlackBlock[] = [
+          {
+            type: "header",
+            text: {
+              type: "plain_text",
+              text: "📋 Baseline created — now monitoring",
+              emoji: true,
+            },
+          },
+        ];
+        for (const r of allChanges.filter((r) => r.baselineCreated)) {
+          const figmaUrl = `https://www.figma.com/design/${r.fileKey}`;
+          const pageNames = r.pages ? Object.keys(r.pages) : [];
+          const pageList = pageNames.length > 0
+            ? pageNames.map((p) => `• ${p}`).join("\n")
+            : "(no pages detected)";
+          baselineBlocks.push({
+            type: "section",
+            text: {
+              type: "mrkdwn",
+              text: `*<${figmaUrl}|${r.fileKey}>*\nPages:\n${pageList}`,
+            },
+          });
+        }
+        await sendSlackNotification(config.slackWebhookUrl, {
+          text: "📋 Baseline created — now monitoring",
+          blocks: baselineBlocks,
+        });
+        console.log("Slack notification sent (baseline created).");
+      } catch (err) {
+        console.warn("Failed to send Slack notification:", err);
+      }
+    } else if (isBaseline && config.dryRun) {
+      console.log("Baseline created — dry run mode, skipping Slack notification.");
+    } else if (isBaseline) {
+      console.log("Baseline created — no SLACK_WEBHOOK_URL configured, skipping notification.");
     } else if (!config.dryRun && config.slackWebhookUrl) {
       try {
         await sendSlackNotification(config.slackWebhookUrl, {
