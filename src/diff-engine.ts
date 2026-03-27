@@ -317,7 +317,7 @@ export function formatSlackReport(
 ): string {
   if (changes.length === 0) return "";
 
-  const displayName = fileName ?? fileKey;
+  const displayName = escapeSlackInlineCode(fileName ?? fileKey);
   const lines: string[] = [
     `*DesignDigest Report*`,
     `File: \`${displayName}\` | ${changes.length} change(s) detected`,
@@ -401,7 +401,7 @@ export function formatSlackBlocks(
 
   const blocks: SlackBlock[] = [];
   const figmaUrl = `https://www.figma.com/design/${fileKey}`;
-  const displayName = fileName ?? fileKey;
+  const displayName = escapeSlackInlineCode(fileName ?? fileKey);
 
   // Header
   blocks.push({
@@ -756,6 +756,11 @@ export function nodeUrl(fileKey: string, nodeId: string): string {
   return `https://www.figma.com/design/${fileKey}?node-id=${encodedId}`;
 }
 
+/** Escape text for use inside Slack inline-code backticks — replace backticks to prevent mrkdwn breakage */
+export function escapeSlackInlineCode(text: string): string {
+  return text.replace(/`/g, "'");
+}
+
 /** Escape URL for use inside Slack link syntax `<url|text>` — encode chars that break parsing */
 function escapeSlackUrl(url: string): string {
   return url
@@ -765,7 +770,7 @@ function escapeSlackUrl(url: string): string {
 }
 
 /** Escape text for use inside Slack mrkdwn link syntax `<url|text>` */
-function escapeSlackLinkText(text: string): string {
+export function escapeSlackLinkText(text: string): string {
   return text
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")

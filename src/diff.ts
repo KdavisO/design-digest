@@ -12,6 +12,7 @@ import {
   groupByPage,
   groupChangesForIssues,
   convertMarkdownToSlackMrkdwn,
+  escapeSlackLinkText,
 } from "./diff-engine.js";
 import { generatePageSummaries } from "./claude-summary.js";
 import { sendSlackNotification } from "./notify.js";
@@ -190,7 +191,7 @@ async function main(): Promise<void> {
           const pageList = names.length > 0
             ? names.map((p) => `• ${p}`).join("\n")
             : "(no pages detected)";
-          const displayName = r.fileName ?? r.fileKey;
+          const displayName = escapeSlackLinkText(r.fileName ?? r.fileKey);
           const prefix = `*<${figmaUrl}|${displayName}>*\nPages:\n`;
           let text: string;
           if (prefix.length + pageList.length <= SLACK_TEXT_LIMIT) {
