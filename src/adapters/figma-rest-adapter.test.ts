@@ -7,6 +7,9 @@ vi.mock("../figma-client.js", () => ({
   fetchNodesProactive: vi.fn(),
   fetchNodesChunked: vi.fn(),
   fetchFile: vi.fn(),
+  fetchVersions: vi.fn(),
+  checkVersionChanged: vi.fn(),
+  extractEditorsSince: vi.fn(),
   filterWatchTargets: vi.fn(),
   sanitizeNode: vi.fn((node: unknown) => node),
 }));
@@ -16,6 +19,9 @@ import {
   fetchNodesProactive,
   fetchNodesChunked,
   fetchFile,
+  fetchVersions,
+  checkVersionChanged,
+  extractEditorsSince,
   filterWatchTargets,
 } from "../figma-client.js";
 
@@ -23,6 +29,9 @@ const mockFetchFileProactive = vi.mocked(fetchFileProactive);
 const mockFetchNodesProactive = vi.mocked(fetchNodesProactive);
 const mockFetchNodesChunked = vi.mocked(fetchNodesChunked);
 const mockFetchFile = vi.mocked(fetchFile);
+const mockFetchVersions = vi.mocked(fetchVersions);
+const mockCheckVersionChanged = vi.mocked(checkVersionChanged);
+const mockExtractEditorsSince = vi.mocked(extractEditorsSince);
 const mockFilterWatchTargets = vi.mocked(filterWatchTargets);
 
 describe("FigmaRestAdapter", () => {
@@ -154,5 +163,46 @@ describe("FigmaRestAdapter", () => {
 
     const adapter = new FigmaRestAdapter("test-token");
     await expect(adapter.fetchPages("file-key")).rejects.toThrow("Network error");
+  });
+
+  it("should delegate checkVersionChanged to figma-client", async () => {
+    mockCheckVersionChanged.mockResolvedValue({
+      changed: true,
+      latestVersionId: "v2",
+    });
+
+    const adapter = new FigmaRestAdapter("test-token");
+    const result = await adapter.checkVersionChanged("file-key", "v1");
+
+    expect(mockCheckVersionChanged).toHaveBeenCalledWith("test-token", "file-key", "v1");
+    expect(result).toEqual({ changed: true, latestVersionId: "v2" });
+  });
+
+  it("should delegate fetchVersions to figma-client", async () => {
+    const versions = [
+      { id: "v1", created_at: "2026-01-01", label: "", description: "", user: { handle: "user1", img_url: "", id: "u1" } },
+    ];
+    mockFetchVersions.mockResolvedValue(versions);
+
+    const adapter = new FigmaRestAdapter("test-token");
+    const result = await adapter.fetchVersions("file-key");
+
+    expect(mockFetchVersions).toHaveBeenCalledWith("test-token", "file-key");
+    expect(result).toEqual(versions);
+  });
+
+  it("should delegate extractEditorsSince to figma-client", () => {
+    const editors = [{ handle: "user1", img_url: "", id: "u1" }];
+    mockExtractEditorsSince.mockReturnValue(editors);
+
+    const versions = [
+      { id: "v1", created_at: "2026-01-02", label: "", description: "", user: { handle: "user1", img_url: "", id: "u1" } },
+    ];
+
+    const adapter = new FigmaRestAdapter("test-token");
+    const result = adapter.extractEditorsSince(versions, "2026-01-01");
+
+    expect(mockExtractEditorsSince).toHaveBeenCalledWith(versions, "2026-01-01");
+    expect(result).toEqual(editors);
   });
 });

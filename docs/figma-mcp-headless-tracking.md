@@ -11,7 +11,7 @@ DesignDigest における Figma データ取得経路の責務・制約・推奨
 | 項目 | Figma REST API | figma-developer-mcp | Figma MCP（use_figma） |
 |------|---------------|---------------------|----------------------|
 | **コード** | `src/figma-client.ts` | `.mcp.json` で設定 | Claude Desktop/claude.ai 内蔵 |
-| **アダプタ** | `FigmaRestAdapter`（現行は `figma-client` 直呼び） | `FigmaMcpAdapter` で正規化 | `FigmaMcpAdapter` で正規化 |
+| **アダプタ** | `FigmaRestAdapter` 経由 | `FigmaMcpAdapter` で正規化 | `FigmaMcpAdapter` で正規化 |
 | **認証方式** | PAT（`FIGMA_TOKEN`） | PAT（`FIGMA_API_KEY`） | OAuth 2.0（ブラウザ認証） |
 | **ヘッドレス実行** | ✅ 可能 | ✅ 可能 | ❌ 不可（ブラウザ必須） |
 | **利用環境** | GitHub Actions / CLI / どこでも | Claude Code CLI（`get_figma_data` MCP ツール） | Claude Desktop / claude.ai（本リポジトリの `/design-check` からは `use_figma` 未提供） |
@@ -26,7 +26,7 @@ DesignDigest における Figma データ取得経路の責務・制約・推奨
 
 **推奨: Figma REST API**
 
-- `src/diff.ts` → `src/figma-client.ts`（現行は `figma-client` の関数を直接呼び出し）
+- `src/diff.ts` → `FigmaRestAdapter` → `src/figma-client.ts`
 - PAT 認証でヘッドレス実行可能
 - プロアクティブチャンク分割、バージョン履歴最適化済み
 - REST API 経路は MCP サーバーが不要で、CI 環境だけで完結
@@ -55,7 +55,7 @@ DesignDigest における Figma データ取得経路の責務・制約・推奨
 ### `FigmaRestAdapter`
 
 - **責務**: Figma REST API を `FigmaDataAdapter` インターフェースでラップ
-- **利用場面**: 現行の `src/diff.ts` では未使用（`src/figma-client.ts` の関数を直接呼び出し）。将来的に Adapter 経由に統一予定
+- **利用場面**: `src/diff.ts` のメインフロー（ページ取得・バージョン履歴チェック・編集者抽出）
 - **内部実装**: `src/figma-client.ts` の `fetchFileProactive()` / `fetchNodesProactive()` に委譲
 - **特徴**: プロアクティブチャンク分割、ペイロード超過時のフォールバック
 
