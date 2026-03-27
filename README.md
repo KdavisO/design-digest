@@ -244,6 +244,26 @@ Each Backlog issue description includes a `[DesignDigest] {fileKey}` marker. Bef
   ➖ OldToggle (INSTANCE) deleted
 ```
 
+### Claude Code MCP integration (`/design-check`)
+
+If you use Claude Code CLI, you can run design checks via the `figma-developer-mcp` MCP server. The MCP server reuses the same `FIGMA_TOKEN` from `.env` — no separate token management needed.
+
+Create `.mcp.json` in the repository root:
+
+```json
+{
+  "mcpServers": {
+    "figma-developer-mcp": {
+      "command": "npx",
+      "args": ["-y", "figma-developer-mcp", "--stdio"],
+      "env": { "FIGMA_API_KEY": "${FIGMA_TOKEN}" }
+    }
+  }
+}
+```
+
+`${FIGMA_TOKEN}` is expanded by Claude Code from your environment. Then run `/design-check` in Claude Code.
+
 ## Development
 
 ```bash

@@ -35,21 +35,29 @@ Figma MCP 経由でデザイン差分検出を実行する。
 
 ## セットアップ
 
-リポジトリルートの `.mcp.json`（Git 管理外。`.gitignore` に含まれています）に以下を追加:
-```json
-{
-  "mcpServers": {
-    "figma-developer-mcp": {
-      "command": "npx",
-      "args": ["-y", "figma-developer-mcp", "--stdio"],
-      "env": { "FIGMA_API_KEY": "<your-figma-personal-access-token>" }
-    }
-  }
-}
-```
+1. `.env` に `FIGMA_TOKEN` を設定する（REST API と MCP で共用）:
+   ```
+   FIGMA_TOKEN=figd_xxx
+   ```
+
+2. リポジトリルートの `.mcp.json`（Git 管理外。`.gitignore` に含まれています）に以下を追加:
+   ```json
+   {
+     "mcpServers": {
+       "figma-developer-mcp": {
+         "command": "npx",
+         "args": ["-y", "figma-developer-mcp", "--stdio"],
+         "env": { "FIGMA_API_KEY": "${FIGMA_TOKEN}" }
+       }
+     }
+   }
+   ```
+   - `${FIGMA_TOKEN}` は Claude Code が `.env` またはプロセス環境から自動展開する
+   - トークンのハードコードは不要
 
 ## 注意事項
 
+- `FIGMA_API_KEY`（MCP 用）と `FIGMA_TOKEN`（REST API 用）は同じ Figma Personal Access Token を指す。`.mcp.json` の `${FIGMA_TOKEN}` 参照により一元管理される
 - MCP レスポンスのデータ構造が REST API と異なる場合があるため、エラー時はレスポンスの構造を確認すること
 - `DRY_RUN=true` で通知なしのテスト実行が可能
 - スナップショットは `./snapshots/` に保存される（初回はベースライン作成のみ）
