@@ -201,10 +201,15 @@ async function main(): Promise<void> {
         const MAX_BASELINE_BLOCKS = 50;
         let finalBaselineBlocks: SlackBlock[] = baselineBlocks;
         if (baselineBlocks.length > MAX_BASELINE_BLOCKS) {
+          // Log full baseline details before truncating
+          for (const r of baselineResults) {
+            const names = r.pageNames ?? [];
+            console.log(`  Baseline: ${r.fileKey} — ${names.length} page(s): ${names.join(", ")}`);
+          }
           finalBaselineBlocks = baselineBlocks.slice(0, MAX_BASELINE_BLOCKS - 1);
           finalBaselineBlocks.push({
             type: "context",
-            elements: [{ type: "mrkdwn", text: `⚠️ Output truncated (${MAX_BASELINE_BLOCKS} block limit). See full report in logs.` }],
+            elements: [{ type: "mrkdwn", text: `⚠️ Output truncated (${MAX_BASELINE_BLOCKS} block limit). Full details logged to console.` }],
           });
         }
         await sendSlackNotification(config.slackWebhookUrl, {
