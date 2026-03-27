@@ -52,8 +52,9 @@ Figma MCP 経由でデザイン差分検出を実行する。
      }
    }
    ```
-   - `${FIGMA_TOKEN}` は Claude Code が `.env` またはプロセス環境から自動展開する
-   - トークンのハードコードは不要
+   - `${FIGMA_TOKEN}` は **Claude Code 起動時の環境変数** から解決される想定です
+   - `.env` を使う場合は、Claude Code を起動する前に `export FIGMA_TOKEN=...` するか、Claude Code 側で `.env` 自動読込設定を有効にしておいてください（いずれもない場合、`${FIGMA_TOKEN}` は展開されずセットアップが失敗します）
+   - `.mcp.json` にトークン文字列を直接ハードコードする必要はありません
 
 ## 注意事項
 
