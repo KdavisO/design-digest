@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { detectChanges, formatConsoleReport, formatSlackReport, formatSlackBlocks, nodeUrl, convertMarkdownToSlackMrkdwn, groupChangesForIssues } from "./diff-engine.js";
+import { detectChanges, formatConsoleReport, formatSlackReport, formatSlackBlocks, nodeUrl, convertMarkdownToSlackMrkdwn, groupChangesForIssues, escapeSlackInlineCode, escapeSlackLinkText } from "./diff-engine.js";
 import type { FigmaNode, FigmaUser } from "./figma-client.js";
 
 function makeNode(overrides: Partial<FigmaNode> & { id: string; name: string }): FigmaNode {
@@ -1005,6 +1005,86 @@ describe("formatSlackBlocks with pageSummaries", () => {
       (b) => b.type === "section" && b.text?.text?.startsWith("💡"),
     );
     expect(summaryBlocks).toHaveLength(0);
+  });
+});
+
+describe("formatSlackBlocks with fileName", () => {
+  it("displays fileName instead of fileKey when provided", () => {
+    const changes = [
+      { pageName: "Home", nodeId: "1:1", nodeName: "Button", nodeType: "FRAME", kind: "added" as const },
+    ];
+    const blocks = formatSlackBlocks("abc123", changes, undefined, undefined, "Design System v2");
+    const fileSection = blocks.find((b) => b.type === "section" && b.accessory);
+    expect(fileSection?.text?.text).toBe("File: `Design System v2`");
+    // URL should still use fileKey
+    expect(fileSection?.accessory?.url).toBe("https://www.figma.com/design/abc123");
+    expect(fileSection?.accessory?.action_id).toBe("open_figma_abc123");
+  });
+
+  it("falls back to fileKey when fileName is undefined", () => {
+    const changes = [
+      { pageName: "Home", nodeId: "1:1", nodeName: "Button", nodeType: "FRAME", kind: "added" as const },
+    ];
+    const blocks = formatSlackBlocks("abc123", changes);
+    const fileSection = blocks.find((b) => b.type === "section" && b.accessory);
+    expect(fileSection?.text?.text).toBe("File: `abc123`");
+  });
+});
+
+describe("formatSlackReport with fileName", () => {
+  it("displays fileName instead of fileKey when provided", () => {
+    const changes = [
+      { pageName: "Home", nodeId: "1:1", nodeName: "Button", nodeType: "FRAME", kind: "added" as const },
+    ];
+    const report = formatSlackReport("abc123", changes, undefined, "Design System v2");
+    expect(report).toContain("File: `Design System v2`");
+    // URL should still use fileKey
+    expect(report).toContain("https://www.figma.com/design/abc123");
+  });
+
+  it("falls back to fileKey when fileName is undefined", () => {
+    const changes = [
+      { pageName: "Home", nodeId: "1:1", nodeName: "Button", nodeType: "FRAME", kind: "added" as const },
+    ];
+    const report = formatSlackReport("abc123", changes);
+    expect(report).toContain("File: `abc123`");
+  });
+});
+
+describe("escapeSlackInlineCode", () => {
+  it("replaces backticks with single quotes", () => {
+    expect(escapeSlackInlineCode("Design `System` v2")).toBe("Design 'System' v2");
+  });
+
+  it("returns unchanged string without backticks", () => {
+    expect(escapeSlackInlineCode("Normal Name")).toBe("Normal Name");
+  });
+});
+
+describe("escapeSlackLinkText", () => {
+  it("escapes &, <, >, and |", () => {
+    expect(escapeSlackLinkText("A & B <C> | D")).toBe("A &amp; B &lt;C&gt; │ D");
+  });
+});
+
+describe("formatSlackBlocks escapes special chars in fileName", () => {
+  it("escapes backticks in fileName", () => {
+    const changes = [
+      { pageName: "Home", nodeId: "1:1", nodeName: "Button", nodeType: "FRAME", kind: "added" as const },
+    ];
+    const blocks = formatSlackBlocks("abc123", changes, undefined, undefined, "Design `System` v2");
+    const fileSection = blocks.find((b) => b.type === "section" && b.accessory);
+    expect(fileSection?.text?.text).toBe("File: `Design 'System' v2`");
+  });
+});
+
+describe("formatSlackReport escapes special chars in fileName", () => {
+  it("escapes backticks in fileName", () => {
+    const changes = [
+      { pageName: "Home", nodeId: "1:1", nodeName: "Button", nodeType: "FRAME", kind: "added" as const },
+    ];
+    const report = formatSlackReport("abc123", changes, undefined, "Design `System` v2");
+    expect(report).toContain("File: `Design 'System' v2`");
   });
 });
 

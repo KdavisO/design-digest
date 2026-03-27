@@ -9,6 +9,7 @@ import {
   fetchFileProactive,
   fetchNodesProactive,
   isPayloadTooLargeError,
+  fetchFileName,
 } from "./figma-client.js";
 import type { FigmaNode, FigmaFile, FigmaVersion } from "./figma-client.js";
 
@@ -615,5 +616,33 @@ describe("isPayloadTooLargeError", () => {
   it("handles non-Error values", () => {
     expect(isPayloadTooLargeError("request too large")).toBe(true);
     expect(isPayloadTooLargeError("something else")).toBe(false);
+  });
+});
+
+describe("fetchFileName", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("returns file name on success", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(JSON.stringify({ name: "Design System v2", lastModified: "", version: "", document: { id: "0:0", name: "Document", type: "DOCUMENT" } }), { status: 200 }),
+    );
+    const name = await fetchFileName("token", "abc123");
+    expect(name).toBe("Design System v2");
+  });
+
+  it("returns undefined on API failure", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response("Not Found", { status: 404 }),
+    );
+    const name = await fetchFileName("token", "bad-key");
+    expect(name).toBeUndefined();
+  });
+
+  it("returns undefined on network error", async () => {
+    vi.spyOn(globalThis, "fetch").mockRejectedValueOnce(new Error("Network error"));
+    const name = await fetchFileName("token", "abc123");
+    expect(name).toBeUndefined();
   });
 });

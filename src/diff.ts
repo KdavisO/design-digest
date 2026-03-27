@@ -11,6 +11,7 @@ import {
   groupByPage,
   groupChangesForIssues,
   convertMarkdownToSlackMrkdwn,
+  escapeSlackLinkText,
 } from "./diff-engine.js";
 import { generatePageSummaries } from "./claude-summary.js";
 import { sendSlackNotification } from "./notify.js";
@@ -45,7 +46,7 @@ async function processFile(
   adapter: FigmaRestAdapter,
   config: Config,
   fileKey: string,
-): Promise<{ fileKey: string; changes: ChangeEntry[]; editors: FigmaUser[]; baselineCreated: boolean; pageNames?: string[] }> {
+): Promise<{ fileKey: string; changes: ChangeEntry[]; editors: FigmaUser[]; baselineCreated: boolean; pageNames?: string[]; fileName?: string }> {
   // Load previous snapshot
   const previous = await loadSnapshot(config.snapshotDir, fileKey);
 
@@ -115,9 +116,13 @@ async function processFile(
   await saveSnapshot(config.snapshotDir, fileKey, pages, latestVersionId);
   console.log("  Snapshot saved.");
 
+  // File name is captured from the shallow fetch inside adapter.fetchPages()
+  const fileName = adapter.lastFileName;
+  if (fileName) console.log(`  File name: ${fileName}`);
+
   if (!previous) {
     console.log("  No previous snapshot found. First run — baseline saved.");
-    return { fileKey, changes: [], editors: [], baselineCreated: true, pageNames: Object.keys(pages) };
+    return { fileKey, changes: [], editors: [], baselineCreated: true, pageNames: Object.keys(pages), fileName };
   }
 
   // Detect changes
@@ -141,7 +146,7 @@ async function processFile(
 
   console.log(report.summary);
 
-  return { fileKey, changes, editors, baselineCreated: false };
+  return { fileKey, changes, editors, baselineCreated: false, fileName };
 }
 
 async function main(): Promise<void> {
@@ -149,7 +154,7 @@ async function main(): Promise<void> {
 
   const config = loadConfig();
   const adapter = new FigmaRestAdapter(config.figmaToken);
-  const allChanges: { fileKey: string; changes: ChangeEntry[]; editors: FigmaUser[]; baselineCreated: boolean; pageNames?: string[] }[] = [];
+  const allChanges: { fileKey: string; changes: ChangeEntry[]; editors: FigmaUser[]; baselineCreated: boolean; pageNames?: string[]; fileName?: string }[] = [];
 
   for (const fileKey of config.figmaFileKeys) {
     console.log(
@@ -183,7 +188,8 @@ async function main(): Promise<void> {
           const pageList = names.length > 0
             ? names.map((p) => `• ${p}`).join("\n")
             : "(no pages detected)";
-          const prefix = `*<${figmaUrl}|${r.fileKey}>*\nPages:\n`;
+          const displayName = escapeSlackLinkText(r.fileName ?? r.fileKey);
+          const prefix = `*<${figmaUrl}|${displayName}>*\nPages:\n`;
           let text: string;
           if (prefix.length + pageList.length <= SLACK_TEXT_LIMIT) {
             text = prefix + pageList;
@@ -319,7 +325,7 @@ async function main(): Promise<void> {
     // Only include AI summaries in Slack when configured
     const slackSummaries = slackNeedsSummaries ? perFileSummaries : undefined;
     let blocks = fileResults.flatMap((r, i) => {
-      const fileBlocks = formatSlackBlocks(r.fileKey, r.changes, r.editors, slackSummaries?.get(r.fileKey));
+      const fileBlocks = formatSlackBlocks(r.fileKey, r.changes, r.editors, slackSummaries?.get(r.fileKey), r.fileName);
       return i < fileResults.length - 1
         ? [...fileBlocks, { type: "divider" as const }]
         : fileBlocks;
@@ -338,7 +344,7 @@ async function main(): Promise<void> {
     const fallbackText = allChanges
       .filter((r) => r.changes.length > 0)
       .map((r) => {
-        const baseReport = formatSlackReport(r.fileKey, r.changes, r.editors);
+        const baseReport = formatSlackReport(r.fileKey, r.changes, r.editors, r.fileName);
         const fileSummaries = slackSummaries?.get(r.fileKey);
         if (!fileSummaries || fileSummaries.size === 0) return baseReport;
         const summaryLines = [...fileSummaries.entries()]
