@@ -8,6 +8,7 @@ import {
   adaptiveBatchSize,
   fetchFileProactive,
   fetchNodesProactive,
+  isPayloadTooLargeError,
 } from "./figma-client.js";
 import type { FigmaNode, FigmaFile, FigmaVersion } from "./figma-client.js";
 
@@ -574,5 +575,45 @@ describe("fetchNodesProactive", () => {
     expect(fetchSpy).toHaveBeenCalledTimes(1);
     // Large nodes are NOT reported as chunked when depth=1
     expect(chunkedNodes).toEqual([]);
+  });
+});
+
+describe("isPayloadTooLargeError", () => {
+  it("detects Figma API 'request too large' error", () => {
+    expect(isPayloadTooLargeError(new Error("Request too large"))).toBe(true);
+  });
+
+  it("detects Figma API 'try a smaller request' error", () => {
+    expect(isPayloadTooLargeError(new Error("Try a smaller request"))).toBe(true);
+  });
+
+  it("detects 'invalid string length' error", () => {
+    expect(isPayloadTooLargeError(new Error("Invalid string length"))).toBe(true);
+  });
+
+  it("detects 'allocation failed' error", () => {
+    expect(isPayloadTooLargeError(new Error("JavaScript heap out of memory - allocation failed"))).toBe(true);
+  });
+
+  it("detects ERR_STRING_TOO_LONG by error code", () => {
+    const err = new Error("Cannot create a string longer than 0x1fffffe8 characters");
+    (err as Error & { code: string }).code = "ERR_STRING_TOO_LONG";
+    expect(isPayloadTooLargeError(err)).toBe(true);
+  });
+
+  it("detects ERR_STRING_TOO_LONG by message pattern", () => {
+    expect(
+      isPayloadTooLargeError(new Error("Cannot create a string longer than 0x1fffffe8 characters")),
+    ).toBe(true);
+  });
+
+  it("returns false for unrelated errors", () => {
+    expect(isPayloadTooLargeError(new Error("Network timeout"))).toBe(false);
+    expect(isPayloadTooLargeError(new Error("404 Not Found"))).toBe(false);
+  });
+
+  it("handles non-Error values", () => {
+    expect(isPayloadTooLargeError("request too large")).toBe(true);
+    expect(isPayloadTooLargeError("something else")).toBe(false);
   });
 });

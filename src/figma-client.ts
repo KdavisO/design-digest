@@ -430,13 +430,19 @@ export function sanitizeNode<T>(node: T): T {
  * Shared across REST adapter (API response errors) and design-check (file parse errors).
  */
 export function isPayloadTooLargeError(err: unknown): boolean {
+  // Check error code first (e.g. Node.js ERR_STRING_TOO_LONG)
+  if (err instanceof Error && "code" in err) {
+    const code = (err as Error & { code?: string }).code;
+    if (code === "ERR_STRING_TOO_LONG") return true;
+  }
   const message = (err instanceof Error ? err.message : String(err)).toLowerCase();
   return (
     message.includes("request too large") ||
     message.includes("try a smaller request") ||
     message.includes("invalid string length") ||
     message.includes("allocation failed") ||
-    message.includes("out of memory")
+    message.includes("out of memory") ||
+    message.includes("string longer than")
   );
 }
 
