@@ -1,4 +1,4 @@
-import type { FigmaNode } from "../figma-client.js";
+import type { FigmaNode, FigmaVersion, FigmaUser } from "../figma-client.js";
 import { sanitizeNode } from "../figma-client.js";
 import type { FigmaDataAdapter, FetchPagesOptions } from "./figma-data-adapter.js";
 
@@ -79,6 +79,36 @@ export class FigmaMcpAdapter implements FigmaDataAdapter {
       sanitized[name] = sanitizeNode(node);
     }
     return new FigmaMcpAdapter(sanitized);
+  }
+
+  async fetchNodes(
+    _fileKey: string,
+    nodeIds: string[],
+    _depth?: number,
+  ): Promise<Record<string, FigmaNode>> {
+    const nodeIdSet = new Set(nodeIds);
+    const result: Record<string, FigmaNode> = {};
+    for (const node of Object.values(this.data)) {
+      if (nodeIdSet.has(node.id)) {
+        result[node.id] = node;
+      }
+    }
+    return result;
+  }
+
+  async fetchVersions(_fileKey: string): Promise<FigmaVersion[]> {
+    throw new Error("FigmaMcpAdapter does not support fetchVersions: MCP works with pre-fetched data");
+  }
+
+  async checkVersionChanged(
+    _fileKey: string,
+    _lastVersionId: string | undefined,
+  ): Promise<{ changed: boolean; latestVersionId: string | undefined }> {
+    throw new Error("FigmaMcpAdapter does not support checkVersionChanged: MCP works with pre-fetched data");
+  }
+
+  extractEditorsSince(_versions: FigmaVersion[], _sinceTimestamp: string): FigmaUser[] {
+    throw new Error("FigmaMcpAdapter does not support extractEditorsSince: MCP works with pre-fetched data");
   }
 
   async fetchPages(

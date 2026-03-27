@@ -251,6 +251,64 @@ describe("FigmaMcpAdapter", () => {
     });
   });
 
+  describe("fetchNodes", () => {
+    it("should return matching nodes by ID from pre-fetched data", async () => {
+      const response: McpFigmaFileResponse = {
+        document: {
+          id: "0:0",
+          name: "Document",
+          type: "DOCUMENT",
+          children: [
+            { id: "1:1", name: "Page A", type: "CANVAS" },
+            { id: "1:2", name: "Page B", type: "CANVAS" },
+            { id: "1:3", name: "Page C", type: "CANVAS" },
+          ],
+        },
+      };
+
+      const adapter = FigmaMcpAdapter.fromMcpResponse(response);
+      const nodes = await adapter.fetchNodes("test-key", ["1:1", "1:3"]);
+
+      expect(Object.keys(nodes).sort()).toEqual(["1:1", "1:3"]);
+      expect(nodes).toHaveProperty("1:1");
+      expect(nodes).toHaveProperty("1:3");
+      expect(nodes["1:1"].name).toBe("Page A");
+      expect(nodes["1:3"].name).toBe("Page C");
+    });
+
+    it("should return empty object when no nodes match", async () => {
+      const adapter = FigmaMcpAdapter.fromPages({
+        "Page A": { id: "1:1", name: "Page A", type: "CANVAS" },
+      });
+      const nodes = await adapter.fetchNodes("test-key", ["9:9"]);
+
+      expect(Object.keys(nodes)).toEqual([]);
+    });
+  });
+
+  describe("unsupported version methods", () => {
+    it("should throw on fetchVersions", async () => {
+      const adapter = FigmaMcpAdapter.fromPages({});
+      await expect(adapter.fetchVersions("test-key")).rejects.toThrow(
+        "FigmaMcpAdapter does not support fetchVersions",
+      );
+    });
+
+    it("should throw on checkVersionChanged", async () => {
+      const adapter = FigmaMcpAdapter.fromPages({});
+      await expect(adapter.checkVersionChanged("test-key", "v1")).rejects.toThrow(
+        "FigmaMcpAdapter does not support checkVersionChanged",
+      );
+    });
+
+    it("should throw on extractEditorsSince", () => {
+      const adapter = FigmaMcpAdapter.fromPages({});
+      expect(() => adapter.extractEditorsSince([], "2026-01-01")).toThrow(
+        "FigmaMcpAdapter does not support extractEditorsSince",
+      );
+    });
+  });
+
   it("should have name property set to MCP", () => {
     const adapter = FigmaMcpAdapter.fromPages({});
     expect(adapter.name).toBe("MCP");
