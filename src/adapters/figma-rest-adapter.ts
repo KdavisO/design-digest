@@ -45,18 +45,38 @@ export class FigmaRestAdapter implements FigmaDataAdapter {
     nodeIds: string[],
     depth?: number,
   ): Promise<Record<string, FigmaNode>> {
-    const { nodes } = await fetchNodesProactive(
-      this.token,
-      fileKey,
-      nodeIds,
-      depth,
-      5,
-    );
-    const result: Record<string, FigmaNode> = {};
-    for (const [id, node] of Object.entries(nodes)) {
-      result[id] = sanitizeNode(node);
+    const batchSize = 5;
+    try {
+      const { nodes } = await fetchNodesProactive(
+        this.token,
+        fileKey,
+        nodeIds,
+        depth,
+        batchSize,
+      );
+      const result: Record<string, FigmaNode> = {};
+      for (const [id, node] of Object.entries(nodes)) {
+        result[id] = sanitizeNode(node);
+      }
+      return result;
+    } catch (err) {
+      if (isPayloadTooLargeError(err)) {
+        console.log("  Payload too large — switching to chunked fetch...");
+        const nodes = await fetchNodesChunked(
+          this.token,
+          fileKey,
+          nodeIds,
+          depth,
+          batchSize,
+        );
+        const result: Record<string, FigmaNode> = {};
+        for (const [id, node] of Object.entries(nodes)) {
+          result[id] = sanitizeNode(node);
+        }
+        return result;
+      }
+      throw err;
     }
-    return result;
   }
 
   private async fetchByNodeIds(

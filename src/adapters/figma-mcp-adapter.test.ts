@@ -285,16 +285,16 @@ describe("FigmaMcpAdapter", () => {
   });
 
   describe("unsupported version methods", () => {
-    it("should throw on fetchVersions", () => {
+    it("should throw on fetchVersions", async () => {
       const adapter = FigmaMcpAdapter.fromPages({});
-      expect(() => adapter.fetchVersions("test-key")).toThrow(
+      await expect(adapter.fetchVersions("test-key")).rejects.toThrow(
         "FigmaMcpAdapter does not support fetchVersions",
       );
     });
 
-    it("should throw on checkVersionChanged", () => {
+    it("should throw on checkVersionChanged", async () => {
       const adapter = FigmaMcpAdapter.fromPages({});
-      expect(() => adapter.checkVersionChanged("test-key", "v1")).toThrow(
+      await expect(adapter.checkVersionChanged("test-key", "v1")).rejects.toThrow(
         "FigmaMcpAdapter does not support checkVersionChanged",
       );
     });

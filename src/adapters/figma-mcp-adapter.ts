@@ -82,22 +82,32 @@ export class FigmaMcpAdapter implements FigmaDataAdapter {
   }
 
   async fetchNodes(
-    ...[, nodeIds]: Parameters<FigmaDataAdapter["fetchNodes"]>
+    _fileKey: string,
+    nodeIds: string[],
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    _depth?: number,
   ): Promise<Record<string, FigmaNode>> {
+    const nodeIdSet = new Set(nodeIds);
     const result: Record<string, FigmaNode> = {};
     for (const node of Object.values(this.data)) {
-      if (nodeIds.includes(node.id)) {
+      if (nodeIdSet.has(node.id)) {
         result[node.id] = node;
       }
     }
     return result;
   }
 
-  fetchVersions(): Promise<FigmaVersion[]> {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  async fetchVersions(_fileKey: string): Promise<FigmaVersion[]> {
     throw new Error("FigmaMcpAdapter does not support fetchVersions: MCP works with pre-fetched data");
   }
 
-  checkVersionChanged(): Promise<{ changed: boolean; latestVersionId: string | undefined }> {
+  async checkVersionChanged(
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    _fileKey: string,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    _lastVersionId: string | undefined,
+  ): Promise<{ changed: boolean; latestVersionId: string | undefined }> {
     throw new Error("FigmaMcpAdapter does not support checkVersionChanged: MCP works with pre-fetched data");
   }
 
