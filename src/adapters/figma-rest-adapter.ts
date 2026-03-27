@@ -40,6 +40,25 @@ export class FigmaRestAdapter implements FigmaDataAdapter {
     return this.fetchByPages(fileKey, watchPages, depth, batchSize);
   }
 
+  async fetchNodes(
+    fileKey: string,
+    nodeIds: string[],
+    depth?: number,
+  ): Promise<Record<string, FigmaNode>> {
+    const { nodes } = await fetchNodesProactive(
+      this.token,
+      fileKey,
+      nodeIds,
+      depth,
+      5,
+    );
+    const result: Record<string, FigmaNode> = {};
+    for (const [id, node] of Object.entries(nodes)) {
+      result[id] = sanitizeNode(node);
+    }
+    return result;
+  }
+
   private async fetchByNodeIds(
     fileKey: string,
     nodeIds: string[],

@@ -1,4 +1,4 @@
-import type { FigmaNode } from "../figma-client.js";
+import type { FigmaNode, FigmaVersion, FigmaUser } from "../figma-client.js";
 
 /**
  * Common interface for fetching Figma file data.
@@ -17,6 +17,37 @@ export interface FigmaDataAdapter {
     fileKey: string,
     options?: FetchPagesOptions,
   ): Promise<Record<string, FigmaNode>>;
+
+  /**
+   * Fetch specific nodes by ID from a Figma file.
+   * Returns sanitized nodes keyed by node ID.
+   */
+  fetchNodes(
+    fileKey: string,
+    nodeIds: string[],
+    depth?: number,
+  ): Promise<Record<string, FigmaNode>>;
+
+  /**
+   * Fetch version history for a Figma file.
+   */
+  fetchVersions(fileKey: string): Promise<FigmaVersion[]>;
+
+  /**
+   * Check if a file's version has changed since the given version ID.
+   */
+  checkVersionChanged(
+    fileKey: string,
+    lastVersionId: string | undefined,
+  ): Promise<{ changed: boolean; latestVersionId: string | undefined }>;
+
+  /**
+   * Extract unique editors from version history since a given timestamp.
+   */
+  extractEditorsSince(
+    versions: FigmaVersion[],
+    sinceTimestamp: string,
+  ): FigmaUser[];
 }
 
 export interface FetchPagesOptions {
