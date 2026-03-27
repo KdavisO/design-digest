@@ -57,6 +57,22 @@ export async function fetchFile(
   return figmaRequest(url, token);
 }
 
+/**
+ * Fetch only the file name from Figma API (lightweight depth=1 call).
+ * Returns undefined if the request fails, allowing callers to fall back to fileKey.
+ */
+export async function fetchFileName(
+  token: string,
+  fileKey: string,
+): Promise<string | undefined> {
+  try {
+    const file = await fetchFile(token, fileKey, 1);
+    return file.name;
+  } catch {
+    return undefined;
+  }
+}
+
 export async function fetchNodes(
   token: string,
   fileKey: string,

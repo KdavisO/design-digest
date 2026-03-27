@@ -1,6 +1,7 @@
 import "dotenv/config";
 import { loadConfig } from "./config.js";
 import { FigmaRestAdapter } from "./adapters/figma-rest-adapter.js";
+import { fetchFileName } from "./figma-client.js";
 import type { FigmaUser } from "./figma-client.js";
 import { loadSnapshot, saveSnapshot } from "./snapshot.js";
 import {
@@ -45,7 +46,13 @@ async function processFile(
   adapter: FigmaRestAdapter,
   config: Config,
   fileKey: string,
-): Promise<{ fileKey: string; changes: ChangeEntry[]; editors: FigmaUser[]; baselineCreated: boolean; pageNames?: string[] }> {
+): Promise<{ fileKey: string; changes: ChangeEntry[]; editors: FigmaUser[]; baselineCreated: boolean; pageNames?: string[]; fileName?: string }> {
+  // Fetch file name from Figma API (lightweight call, falls back to undefined on failure)
+  const fileName = await fetchFileName(config.figmaToken, fileKey);
+  if (fileName) {
+    console.log(`  File name: ${fileName}`);
+  }
+
   // Load previous snapshot
   const previous = await loadSnapshot(config.snapshotDir, fileKey);
 
@@ -63,7 +70,7 @@ async function processFile(
       latestVersionId = versionCheck.latestVersionId;
       if (!versionCheck.changed) {
         console.log("  No version change detected — skipping snapshot comparison.");
-        return { fileKey, changes: [], editors: [], baselineCreated: false };
+        return { fileKey, changes: [], editors: [], baselineCreated: false, fileName };
       }
       console.log("  Version changed — fetching current state.");
     } catch (err) {
@@ -117,7 +124,7 @@ async function processFile(
 
   if (!previous) {
     console.log("  No previous snapshot found. First run — baseline saved.");
-    return { fileKey, changes: [], editors: [], baselineCreated: true, pageNames: Object.keys(pages) };
+    return { fileKey, changes: [], editors: [], baselineCreated: true, pageNames: Object.keys(pages), fileName };
   }
 
   // Detect changes
@@ -141,7 +148,7 @@ async function processFile(
 
   console.log(report.summary);
 
-  return { fileKey, changes, editors, baselineCreated: false };
+  return { fileKey, changes, editors, baselineCreated: false, fileName };
 }
 
 async function main(): Promise<void> {
@@ -149,7 +156,7 @@ async function main(): Promise<void> {
 
   const config = loadConfig();
   const adapter = new FigmaRestAdapter(config.figmaToken);
-  const allChanges: { fileKey: string; changes: ChangeEntry[]; editors: FigmaUser[]; baselineCreated: boolean; pageNames?: string[] }[] = [];
+  const allChanges: { fileKey: string; changes: ChangeEntry[]; editors: FigmaUser[]; baselineCreated: boolean; pageNames?: string[]; fileName?: string }[] = [];
 
   for (const fileKey of config.figmaFileKeys) {
     console.log(
@@ -183,7 +190,8 @@ async function main(): Promise<void> {
           const pageList = names.length > 0
             ? names.map((p) => `• ${p}`).join("\n")
             : "(no pages detected)";
-          const prefix = `*<${figmaUrl}|${r.fileKey}>*\nPages:\n`;
+          const displayName = r.fileName ?? r.fileKey;
+          const prefix = `*<${figmaUrl}|${displayName}>*\nPages:\n`;
           let text: string;
           if (prefix.length + pageList.length <= SLACK_TEXT_LIMIT) {
             text = prefix + pageList;
@@ -319,7 +327,7 @@ async function main(): Promise<void> {
     // Only include AI summaries in Slack when configured
     const slackSummaries = slackNeedsSummaries ? perFileSummaries : undefined;
     let blocks = fileResults.flatMap((r, i) => {
-      const fileBlocks = formatSlackBlocks(r.fileKey, r.changes, r.editors, slackSummaries?.get(r.fileKey));
+      const fileBlocks = formatSlackBlocks(r.fileKey, r.changes, r.editors, slackSummaries?.get(r.fileKey), r.fileName);
       return i < fileResults.length - 1
         ? [...fileBlocks, { type: "divider" as const }]
         : fileBlocks;
@@ -338,7 +346,7 @@ async function main(): Promise<void> {
     const fallbackText = allChanges
       .filter((r) => r.changes.length > 0)
       .map((r) => {
-        const baseReport = formatSlackReport(r.fileKey, r.changes, r.editors);
+        const baseReport = formatSlackReport(r.fileKey, r.changes, r.editors, r.fileName);
         const fileSummaries = slackSummaries?.get(r.fileKey);
         if (!fileSummaries || fileSummaries.size === 0) return baseReport;
         const summaryLines = [...fileSummaries.entries()]

@@ -1008,6 +1008,49 @@ describe("formatSlackBlocks with pageSummaries", () => {
   });
 });
 
+describe("formatSlackBlocks with fileName", () => {
+  it("displays fileName instead of fileKey when provided", () => {
+    const changes = [
+      { pageName: "Home", nodeId: "1:1", nodeName: "Button", nodeType: "FRAME", kind: "added" as const },
+    ];
+    const blocks = formatSlackBlocks("abc123", changes, undefined, undefined, "Design System v2");
+    const fileSection = blocks.find((b) => b.type === "section" && b.accessory);
+    expect(fileSection?.text?.text).toBe("File: `Design System v2`");
+    // URL should still use fileKey
+    expect(fileSection?.accessory?.url).toBe("https://www.figma.com/design/abc123");
+    expect(fileSection?.accessory?.action_id).toBe("open_figma_abc123");
+  });
+
+  it("falls back to fileKey when fileName is undefined", () => {
+    const changes = [
+      { pageName: "Home", nodeId: "1:1", nodeName: "Button", nodeType: "FRAME", kind: "added" as const },
+    ];
+    const blocks = formatSlackBlocks("abc123", changes);
+    const fileSection = blocks.find((b) => b.type === "section" && b.accessory);
+    expect(fileSection?.text?.text).toBe("File: `abc123`");
+  });
+});
+
+describe("formatSlackReport with fileName", () => {
+  it("displays fileName instead of fileKey when provided", () => {
+    const changes = [
+      { pageName: "Home", nodeId: "1:1", nodeName: "Button", nodeType: "FRAME", kind: "added" as const },
+    ];
+    const report = formatSlackReport("abc123", changes, undefined, "Design System v2");
+    expect(report).toContain("File: `Design System v2`");
+    // URL should still use fileKey
+    expect(report).toContain("https://www.figma.com/design/abc123");
+  });
+
+  it("falls back to fileKey when fileName is undefined", () => {
+    const changes = [
+      { pageName: "Home", nodeId: "1:1", nodeName: "Button", nodeType: "FRAME", kind: "added" as const },
+    ];
+    const report = formatSlackReport("abc123", changes);
+    expect(report).toContain("File: `abc123`");
+  });
+});
+
 describe("groupChangesForIssues", () => {
   it("groups by node when unique nodes <= 10", () => {
     const changes = [

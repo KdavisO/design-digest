@@ -313,12 +313,14 @@ export function formatSlackReport(
   fileKey: string,
   changes: ChangeEntry[],
   editors?: FigmaUser[],
+  fileName?: string,
 ): string {
   if (changes.length === 0) return "";
 
+  const displayName = fileName ?? fileKey;
   const lines: string[] = [
     `*DesignDigest Report*`,
-    `File: \`${fileKey}\` | ${changes.length} change(s) detected`,
+    `File: \`${displayName}\` | ${changes.length} change(s) detected`,
     `<https://www.figma.com/design/${fileKey}|Open in Figma>`,
   ];
 
@@ -393,11 +395,13 @@ export function formatSlackBlocks(
   changes: ChangeEntry[],
   editors?: FigmaUser[],
   pageSummaries?: Map<string, string>,
+  fileName?: string,
 ): SlackBlock[] {
   if (changes.length === 0) return [];
 
   const blocks: SlackBlock[] = [];
   const figmaUrl = `https://www.figma.com/design/${fileKey}`;
+  const displayName = fileName ?? fileKey;
 
   // Header
   blocks.push({
@@ -414,7 +418,7 @@ export function formatSlackBlocks(
     type: "section",
     text: {
       type: "mrkdwn",
-      text: `File: \`${fileKey}\``,
+      text: `File: \`${displayName}\``,
     },
     accessory: {
       type: "button",
