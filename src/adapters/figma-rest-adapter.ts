@@ -33,13 +33,24 @@ export class FigmaRestAdapter implements FigmaDataAdapter {
     fileKey: string,
     options?: FetchPagesOptions,
   ): Promise<Record<string, FigmaNode>> {
+    // Reset to prevent stale values from a previous file leaking through
+    this.lastFileName = undefined;
+
     const watchPages = options?.watchPages ?? [];
     const watchNodeIds = options?.watchNodeIds ?? [];
     const depth = options?.depth;
     const batchSize = options?.batchSize ?? DEFAULT_BATCH_SIZE;
 
     if (watchNodeIds.length > 0) {
-      return this.fetchByNodeIds(fileKey, watchNodeIds, depth, batchSize);
+      const pages = await this.fetchByNodeIds(fileKey, watchNodeIds, depth, batchSize);
+      // Node-based path doesn't fetch file metadata, so do a lightweight lookup
+      try {
+        const file = await fetchFile(this.token, fileKey, 1);
+        this.lastFileName = file.name;
+      } catch {
+        // Non-critical — fileName is optional for display
+      }
+      return pages;
     }
 
     return this.fetchByPages(fileKey, watchPages, depth, batchSize);
