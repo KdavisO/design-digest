@@ -1,7 +1,6 @@
 import "dotenv/config";
 import { loadConfig } from "./config.js";
 import { FigmaRestAdapter } from "./adapters/figma-rest-adapter.js";
-import { fetchFileName } from "./figma-client.js";
 import type { FigmaUser } from "./figma-client.js";
 import { loadSnapshot, saveSnapshot } from "./snapshot.js";
 import {
@@ -117,10 +116,12 @@ async function processFile(
   await saveSnapshot(config.snapshotDir, fileKey, pages, latestVersionId);
   console.log("  Snapshot saved.");
 
+  // File name is captured from the shallow fetch inside adapter.fetchPages()
+  const fileName = adapter.lastFileName;
+  if (fileName) console.log(`  File name: ${fileName}`);
+
   if (!previous) {
     console.log("  No previous snapshot found. First run — baseline saved.");
-    const fileName = await fetchFileName(config.figmaToken, fileKey);
-    if (fileName) console.log(`  File name: ${fileName}`);
     return { fileKey, changes: [], editors: [], baselineCreated: true, pageNames: Object.keys(pages), fileName };
   }
 
@@ -144,13 +145,6 @@ async function processFile(
   const report = buildReport(fileKey, changes, editors);
 
   console.log(report.summary);
-
-  // Fetch file name only when there are changes to report (avoids unnecessary API call)
-  let fileName: string | undefined;
-  if (changes.length > 0) {
-    fileName = await fetchFileName(config.figmaToken, fileKey);
-    if (fileName) console.log(`  File name: ${fileName}`);
-  }
 
   return { fileKey, changes, editors, baselineCreated: false, fileName };
 }

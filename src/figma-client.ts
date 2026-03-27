@@ -183,7 +183,7 @@ export async function fetchFileProactive(
   watchPages: string[],
   depth?: number,
   batchSize: number = 5,
-): Promise<{ pages: Record<string, FigmaNode>; chunkedPages: string[]; targetPageIds: string[] }> {
+): Promise<{ pages: Record<string, FigmaNode>; chunkedPages: string[]; targetPageIds: string[]; fileName: string }> {
   // Step 1: Fetch shallow file to get page-level structure
   const shallowFile = await fetchFile(token, fileKey, 1);
   const targetPages = filterWatchTargets(shallowFile, watchPages);
@@ -266,7 +266,7 @@ export async function fetchFileProactive(
   }
 
   const targetPageIds = targetPages.map((p) => p.id);
-  return { pages, chunkedPages, targetPageIds };
+  return { pages, chunkedPages, targetPageIds, fileName: shallowFile.name };
 }
 
 /**

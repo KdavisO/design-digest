@@ -22,6 +22,8 @@ const DEFAULT_BATCH_SIZE = 5;
 export class FigmaRestAdapter implements FigmaDataAdapter {
   readonly name = "REST API";
   private readonly token: string;
+  /** File name from the most recent fetchPages call (set during page-based fetching) */
+  lastFileName: string | undefined;
 
   constructor(token: string) {
     this.token = token;
@@ -144,13 +146,14 @@ export class FigmaRestAdapter implements FigmaDataAdapter {
     batchSize: number,
   ): Promise<Record<string, FigmaNode>> {
     try {
-      const { pages: fetchedPages } = await fetchFileProactive(
+      const { pages: fetchedPages, fileName } = await fetchFileProactive(
         this.token,
         fileKey,
         watchPages,
         depth,
         batchSize,
       );
+      this.lastFileName = fileName;
       const pages: Record<string, FigmaNode> = {};
       for (const [name, node] of Object.entries(fetchedPages)) {
         pages[name] = sanitizeNode(node);
@@ -160,6 +163,7 @@ export class FigmaRestAdapter implements FigmaDataAdapter {
       if (isPayloadTooLargeError(err)) {
         console.log("  Payload too large — fetching page list and chunking...");
         const file = await fetchFile(this.token, fileKey, 1);
+        this.lastFileName = file.name;
         const targetPages = filterWatchTargets(file, watchPages);
         const pageIds = targetPages.map((p) => p.id);
         const precomputedShallow: Record<string, FigmaNode> = {};
