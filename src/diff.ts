@@ -38,6 +38,9 @@ import type { BacklogConfig } from "./backlog-client.js";
 import type { ChangeEntry } from "./diff-engine.js";
 import type { Config } from "./config.js";
 
+// Uses concrete FigmaRestAdapter (not FigmaDataAdapter interface) because diff.ts
+// requires version history methods (checkVersionChanged, fetchVersions, extractEditorsSince)
+// that are REST API-specific and not part of the common adapter interface.
 async function processFile(
   adapter: FigmaRestAdapter,
   config: Config,
@@ -80,6 +83,10 @@ async function processFile(
   if (config.figmaWatchNodeIds.length > 0) {
     console.log(
       `  Fetching specific nodes: ${config.figmaWatchNodeIds.join(", ")}`,
+    );
+  } else if (config.figmaWatchPages.length > 0) {
+    console.log(
+      `  Fetching watched pages (proactive strategy): ${config.figmaWatchPages.join(", ")}`,
     );
   } else {
     console.log(`  Fetching full file (proactive strategy)...`);

@@ -4,7 +4,7 @@ import {
   fetchNodesProactive,
   fetchNodesChunked,
   fetchFile,
-  fetchVersions,
+  fetchVersions as fetchVersionsFn,
   checkVersionChanged as checkVersionChangedFn,
   extractEditorsSince as extractEditorsSinceFn,
   filterWatchTargets,
@@ -93,7 +93,7 @@ export class FigmaRestAdapter implements FigmaDataAdapter {
    * Fetch version history for a file.
    */
   async fetchVersions(fileKey: string): Promise<FigmaVersion[]> {
-    return fetchVersions(this.token, fileKey);
+    return fetchVersionsFn(this.token, fileKey);
   }
 
   /**
