@@ -197,9 +197,19 @@ async function main(): Promise<void> {
             text: { type: "mrkdwn", text },
           });
         }
+        // Slack limits messages to 50 blocks — truncate with a note if exceeded
+        const MAX_BASELINE_BLOCKS = 50;
+        let finalBaselineBlocks: SlackBlock[] = baselineBlocks;
+        if (baselineBlocks.length > MAX_BASELINE_BLOCKS) {
+          finalBaselineBlocks = baselineBlocks.slice(0, MAX_BASELINE_BLOCKS - 1);
+          finalBaselineBlocks.push({
+            type: "context",
+            elements: [{ type: "mrkdwn", text: `⚠️ Output truncated (${MAX_BASELINE_BLOCKS} block limit). See full report in logs.` }],
+          });
+        }
         await sendSlackNotification(config.slackWebhookUrl, {
           text: "📋 Baseline created — now monitoring",
-          blocks: baselineBlocks,
+          blocks: finalBaselineBlocks,
         });
         console.log("Slack notification sent (baseline created).");
       } catch (err) {
