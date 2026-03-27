@@ -1,0 +1,24 @@
+# GitHub 自動生成リリースノートの設定（PRラベルに基づくカテゴリ分け）
+# コミットプレフィックスに基づく分類は /release コマンドの CHANGELOG.md 生成で行われる
+# https://docs.github.com/en/repositories/releasing-on-github/automatically-generated-release-notes
+changelog:
+  categories:
+    - title: "🚀 New Features"
+      labels:
+        - "enhancement"
+        - "feature"
+    - title: "🐛 Bug Fixes"
+      labels:
+        - "bug"
+    - title: "🔧 Refactoring"
+      labels:
+        - "refactor"
+    - title: "🎨 UI/UX"
+      labels:
+        - "ui/ux"
+    - title: "📚 Documentation"
+      labels:
+        - "documentation"
+    - title: "🔨 Other Changes"
+      labels:
+        - "*"
