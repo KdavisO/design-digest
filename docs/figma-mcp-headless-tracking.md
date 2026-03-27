@@ -12,7 +12,7 @@ DesignDigest における Figma データ取得経路の責務・制約・推奨
 |------|---------------|---------------------|----------------------|
 | **コード** | `src/figma-client.ts` | `.mcp.json` で設定 | Claude Desktop/claude.ai 内蔵 |
 | **アダプタ** | `FigmaRestAdapter` 経由 | `FigmaMcpAdapter` で正規化 | `FigmaMcpAdapter` で正規化 |
-| **認証方式** | PAT（`FIGMA_TOKEN`） | PAT（`FIGMA_TOKEN` → `.mcp.json` で `FIGMA_API_KEY` に展開） | OAuth 2.0（ブラウザ認証） |
+| **認証方式** | PAT（`FIGMA_TOKEN`） | PAT（環境変数 `FIGMA_TOKEN` を Claude Code が設定読み込み時に `.mcp.json` の `FIGMA_API_KEY` として展開） | OAuth 2.0（ブラウザ認証） |
 | **ヘッドレス実行** | ✅ 可能 | ✅ 可能 | ❌ 不可（ブラウザ必須） |
 | **利用環境** | GitHub Actions / CLI / どこでも | Claude Code CLI（`get_figma_data` MCP ツール） | Claude Desktop / claude.ai（本リポジトリの `/design-check` からは `use_figma` 未提供） |
 | **データ形式** | Figma REST API レスポンス | REST API ラッパー（実質同一） | MCP 独自形式（正規化が必要） |
