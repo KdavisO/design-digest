@@ -153,7 +153,7 @@ export async function fetchNodesChunked(
 }
 
 /** Threshold for proactive chunking: if a page has more children than this, chunk instead of fetching full. */
-const PROACTIVE_CHUNK_THRESHOLD = 50;
+export const PROACTIVE_CHUNK_THRESHOLD = 50;
 
 /**
  * Fetch file with proactive chunking for large pages.
@@ -423,6 +423,21 @@ export function sanitizeNode<T>(node: T): T {
     result[key] = sanitizeNode(value);
   }
   return result as T;
+}
+
+/**
+ * Heuristic detection of payload-too-large / OOM-style failures.
+ * Shared across REST adapter (API response errors) and design-check (file parse errors).
+ */
+export function isPayloadTooLargeError(err: unknown): boolean {
+  const message = (err instanceof Error ? err.message : String(err)).toLowerCase();
+  return (
+    message.includes("request too large") ||
+    message.includes("try a smaller request") ||
+    message.includes("invalid string length") ||
+    message.includes("allocation failed") ||
+    message.includes("out of memory")
+  );
 }
 
 async function figmaRequest<T>(url: string, token: string): Promise<T> {

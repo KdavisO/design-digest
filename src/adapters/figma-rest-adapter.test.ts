@@ -1,18 +1,22 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { FigmaRestAdapter } from "./figma-rest-adapter.js";
 
-// Mock the figma-client module
-vi.mock("../figma-client.js", () => ({
-  fetchFileProactive: vi.fn(),
-  fetchNodesProactive: vi.fn(),
-  fetchNodesChunked: vi.fn(),
-  fetchFile: vi.fn(),
-  fetchVersions: vi.fn(),
-  checkVersionChanged: vi.fn(),
-  extractEditorsSince: vi.fn(),
-  filterWatchTargets: vi.fn(),
-  sanitizeNode: vi.fn((node: unknown) => node),
-}));
+// Mock the figma-client module (keep isPayloadTooLargeError as real implementation)
+vi.mock("../figma-client.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../figma-client.js")>();
+  return {
+    fetchFileProactive: vi.fn(),
+    fetchNodesProactive: vi.fn(),
+    fetchNodesChunked: vi.fn(),
+    fetchFile: vi.fn(),
+    fetchVersions: vi.fn(),
+    checkVersionChanged: vi.fn(),
+    extractEditorsSince: vi.fn(),
+    filterWatchTargets: vi.fn(),
+    sanitizeNode: vi.fn((node: unknown) => node),
+    isPayloadTooLargeError: actual.isPayloadTooLargeError,
+  };
+});
 
 import {
   fetchFileProactive,

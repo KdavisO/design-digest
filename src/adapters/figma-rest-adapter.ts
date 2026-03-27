@@ -9,6 +9,7 @@ import {
   extractEditorsSince as extractEditorsSinceFn,
   filterWatchTargets,
   sanitizeNode,
+  isPayloadTooLargeError,
 } from "../figma-client.js";
 import type { FigmaDataAdapter, FetchPagesOptions } from "./figma-data-adapter.js";
 
@@ -192,11 +193,3 @@ function sanitizeNodesById(nodes: Record<string, FigmaNode>): Record<string, Fig
   return result;
 }
 
-function isPayloadTooLargeError(err: unknown): boolean {
-  const message = (err instanceof Error ? err.message : String(err)).toLowerCase();
-  return (
-    message.includes("request too large") ||
-    message.includes("try a smaller request") ||
-    message.includes("invalid string length")
-  );
-}
