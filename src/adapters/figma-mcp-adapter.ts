@@ -111,7 +111,8 @@ export class FigmaMcpAdapter implements FigmaDataAdapter {
     throw new Error("FigmaMcpAdapter does not support checkVersionChanged: MCP works with pre-fetched data");
   }
 
-  extractEditorsSince(): FigmaUser[] {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  extractEditorsSince(_versions: FigmaVersion[], _sinceTimestamp: string): FigmaUser[] {
     throw new Error("FigmaMcpAdapter does not support extractEditorsSince: MCP works with pre-fetched data");
   }
 

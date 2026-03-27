@@ -269,7 +269,9 @@ describe("FigmaMcpAdapter", () => {
       const adapter = FigmaMcpAdapter.fromMcpResponse(response);
       const nodes = await adapter.fetchNodes("test-key", ["1:1", "1:3"]);
 
-      expect(Object.keys(nodes)).toEqual(["1:1", "1:3"]);
+      expect(Object.keys(nodes).sort()).toEqual(["1:1", "1:3"]);
+      expect(nodes).toHaveProperty("1:1");
+      expect(nodes).toHaveProperty("1:3");
       expect(nodes["1:1"].name).toBe("Page A");
       expect(nodes["1:3"].name).toBe("Page C");
     });

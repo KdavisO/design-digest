@@ -12,6 +12,8 @@ import {
 } from "../figma-client.js";
 import type { FigmaDataAdapter, FetchPagesOptions } from "./figma-data-adapter.js";
 
+const DEFAULT_BATCH_SIZE = 5;
+
 /**
  * Adapter that fetches Figma data via the REST API.
  * Wraps the existing figma-client.ts functions with the common adapter interface.
@@ -31,7 +33,7 @@ export class FigmaRestAdapter implements FigmaDataAdapter {
     const watchPages = options?.watchPages ?? [];
     const watchNodeIds = options?.watchNodeIds ?? [];
     const depth = options?.depth;
-    const batchSize = options?.batchSize ?? 5;
+    const batchSize = options?.batchSize ?? DEFAULT_BATCH_SIZE;
 
     if (watchNodeIds.length > 0) {
       return this.fetchByNodeIds(fileKey, watchNodeIds, depth, batchSize);
@@ -45,7 +47,7 @@ export class FigmaRestAdapter implements FigmaDataAdapter {
     nodeIds: string[],
     depth?: number,
   ): Promise<Record<string, FigmaNode>> {
-    const batchSize = 5;
+    const batchSize = DEFAULT_BATCH_SIZE;
     try {
       const { nodes } = await fetchNodesProactive(
         this.token,

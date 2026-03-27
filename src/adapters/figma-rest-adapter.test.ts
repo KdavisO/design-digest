@@ -213,6 +213,35 @@ describe("FigmaRestAdapter", () => {
     expect(Object.keys(result)).toEqual(["1:1", "1:2"]);
   });
 
+  it("should fall back to chunked fetch on payload-too-large error in fetchNodes", async () => {
+    mockFetchNodesProactive.mockRejectedValue(new Error("Request too large"));
+    mockFetchNodesChunked.mockResolvedValue({
+      "1:1": { id: "1:1", name: "Node A", type: "FRAME" },
+    });
+
+    const adapter = new FigmaRestAdapter("test-token");
+    const result = await adapter.fetchNodes("file-key", ["1:1"]);
+
+    expect(mockFetchNodesProactive).toHaveBeenCalled();
+    expect(mockFetchNodesChunked).toHaveBeenCalledWith(
+      "test-token",
+      "file-key",
+      ["1:1"],
+      undefined,
+      5,
+    );
+    expect(result).toEqual({
+      "1:1": { id: "1:1", name: "Node A", type: "FRAME" },
+    });
+  });
+
+  it("should re-throw non-payload errors in fetchNodes", async () => {
+    mockFetchNodesProactive.mockRejectedValue(new Error("Network error"));
+
+    const adapter = new FigmaRestAdapter("test-token");
+    await expect(adapter.fetchNodes("file-key", ["1:1"])).rejects.toThrow("Network error");
+  });
+
   it("should delegate extractEditorsSince to figma-client", () => {
     const editors = [{ handle: "user1", img_url: "", id: "u1" }];
     mockExtractEditorsSince.mockReturnValue(editors);
