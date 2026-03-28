@@ -204,7 +204,7 @@ export class FigmaMcpAdapter implements FigmaDataAdapter {
 
 /** Extract and sanitize pages from a single MCP response. */
 function extractPagesFromResponse(response: McpFigmaFileResponse): Record<string, FigmaNode> {
-  const pages: Record<string, FigmaNode> = {};
+  const pages = Object.create(null) as Record<string, FigmaNode>;
 
   if (response.document?.children) {
     for (const page of response.document.children) {
