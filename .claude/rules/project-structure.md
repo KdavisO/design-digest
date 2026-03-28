@@ -8,7 +8,7 @@ globs: []
 ## ファイル配置
 
 - エントリポイント: `src/diff.ts`（メイン実行）, `src/design-check.ts`（MCP経由のデザインチェック）
-- 設定: `src/config.ts` — 環境変数の読み込みと `Config` 型定義
+- 設定: `src/config.ts` — 環境変数のパース/検証と `Config` 型定義
 - Figma API クライアント: `src/figma-client.ts` — REST API の低レベルラッパー
 - アダプター層: `src/adapters/` — Figma データ取得の抽象化
   - `figma-data-adapter.ts` — 共通インターフェース（`FigmaDataAdapter`）
