@@ -48,54 +48,72 @@ export async function findExistingIssue(
   const CLOSED_STATUS_ID = 4;
 
   const MAX_COUNT = 100;
+  // Safety limit to avoid excessive API calls in very large projects
+  const MAX_PAGES = 10;
 
-  const params = new URLSearchParams({
-    apiKey: config.apiKey,
-    "projectId[]": config.projectId,
-    keyword: marker,
-    count: String(MAX_COUNT),
-    sort: "created",
-    order: "desc",
-  });
+  const escapedMarker = marker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const markerRegex = new RegExp(`(^|\\r?\\n)${escapedMarker}(\\r?\\n|$)`);
 
-  const url = `${baseUrl(config.spaceId)}/issues?${params}`;
-  const response = await fetch(url);
+  let offset = 0;
+  let totalFetched = 0;
 
-  if (!response.ok) {
-    const body = await response.text().catch(() => "");
-    throw new Error(
-      `Backlog API search failed: ${response.status} ${response.statusText}${body ? ` - ${body}` : ""}`,
+  for (let page = 0; page < MAX_PAGES; page++) {
+    const params = new URLSearchParams({
+      apiKey: config.apiKey,
+      "projectId[]": config.projectId,
+      keyword: marker,
+      count: String(MAX_COUNT),
+      offset: String(offset),
+      sort: "created",
+      order: "desc",
+    });
+
+    const url = `${baseUrl(config.spaceId)}/issues?${params}`;
+    const response = await fetch(url);
+
+    if (!response.ok) {
+      const body = await response.text().catch(() => "");
+      throw new Error(
+        `Backlog API search failed: ${response.status} ${response.statusText}${body ? ` - ${body}` : ""}`,
+      );
+    }
+
+    const issues: BacklogIssueListItem[] = await response.json();
+    if (issues.length === 0) break;
+
+    totalFetched += issues.length;
+
+    // Validate marker exact line match in description to prevent partial matches
+    // (e.g., "node:1:2" matching "node:1:23"), and exclude closed issues.
+    const match = issues.find(
+      (issue) =>
+        issue.description != null &&
+        markerRegex.test(issue.description) &&
+        issue.status?.id !== CLOSED_STATUS_ID,
     );
+    if (match) {
+      return {
+        id: match.id,
+        issueKey: match.issueKey,
+        summary: match.summary,
+        description: match.description,
+      };
+    }
+
+    // Last page — no more results to fetch
+    if (issues.length < MAX_COUNT) break;
+
+    offset += issues.length;
   }
 
-  const issues: BacklogIssueListItem[] = await response.json();
-  if (issues.length === 0) return null;
-
-  if (issues.length >= MAX_COUNT) {
+  if (totalFetched >= MAX_COUNT * MAX_PAGES) {
     console.warn(
-      `[DesignDigest] Warning: Backlog search returned ${issues.length} issues (limit: ${MAX_COUNT}). ` +
+      `[DesignDigest] Warning: Backlog search reached pagination limit (${totalFetched} issues fetched across ${MAX_PAGES} pages). ` +
         `Marker match may be missed. Consider narrowing the search keyword.`,
     );
   }
 
-  // Validate marker exact line match in description to prevent partial matches
-  // (e.g., "node:1:2" matching "node:1:23"), and exclude closed issues.
-  const escapedMarker = marker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const markerRegex = new RegExp(`(^|\\r?\\n)${escapedMarker}(\\r?\\n|$)`);
-  const match = issues.find(
-    (issue) =>
-      issue.description != null &&
-      markerRegex.test(issue.description) &&
-      issue.status?.id !== CLOSED_STATUS_ID,
-  );
-  if (!match) return null;
-
-  return {
-    id: match.id,
-    issueKey: match.issueKey,
-    summary: match.summary,
-    description: match.description,
-  };
+  return null;
 }
 
 /**
