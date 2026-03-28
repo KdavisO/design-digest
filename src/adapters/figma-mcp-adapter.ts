@@ -1,6 +1,7 @@
 import type { FigmaNode, FigmaVersion, FigmaUser } from "../figma-client.js";
-import { sanitizeNode, PROACTIVE_CHUNK_THRESHOLD } from "../figma-client.js";
+import { PROACTIVE_CHUNK_THRESHOLD } from "../figma-client.js";
 import type { FigmaDataAdapter, FetchPagesOptions } from "./figma-data-adapter.js";
+import { sanitizeNode, sanitizeRecord } from "./sanitize-helpers.js";
 
 /**
  * MCP response structure from Figma MCP's `use_figma` tool.
@@ -75,10 +76,12 @@ export class FigmaMcpAdapter implements FigmaDataAdapter {
    * Later responses override earlier ones for the same page name (last-write-wins).
    */
   static fromMcpResponses(responses: McpFigmaFileResponse[]): FigmaMcpAdapter {
-    const merged: Record<string, FigmaNode> = {};
+    const merged = Object.create(null) as Record<string, FigmaNode>;
     for (const response of responses) {
       const pages = extractPagesFromResponse(response);
-      Object.assign(merged, pages);
+      for (const [key, value] of Object.entries(pages)) {
+        merged[key] = value;
+      }
     }
     return new FigmaMcpAdapter(merged);
   }
@@ -88,11 +91,7 @@ export class FigmaMcpAdapter implements FigmaDataAdapter {
    * Useful when Claude has already extracted and structured the page data.
    */
   static fromPages(pages: Record<string, FigmaNode>): FigmaMcpAdapter {
-    const sanitized: Record<string, FigmaNode> = {};
-    for (const [name, node] of Object.entries(pages)) {
-      sanitized[name] = sanitizeNode(node);
-    }
-    return new FigmaMcpAdapter(sanitized);
+    return new FigmaMcpAdapter(sanitizeRecord(pages));
   }
 
   /**
@@ -207,7 +206,7 @@ export class FigmaMcpAdapter implements FigmaDataAdapter {
 
 /** Extract and sanitize pages from a single MCP response. */
 function extractPagesFromResponse(response: McpFigmaFileResponse): Record<string, FigmaNode> {
-  const pages: Record<string, FigmaNode> = {};
+  const pages = Object.create(null) as Record<string, FigmaNode>;
 
   if (response.document?.children) {
     for (const page of response.document.children) {

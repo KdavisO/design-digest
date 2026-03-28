@@ -8,10 +8,10 @@ import {
   checkVersionChanged as checkVersionChangedFn,
   extractEditorsSince as extractEditorsSinceFn,
   filterWatchTargets,
-  sanitizeNode,
   isPayloadTooLargeError,
 } from "../figma-client.js";
 import type { FigmaDataAdapter, FetchPagesOptions } from "./figma-data-adapter.js";
+import { sanitizeRecord, sanitizeRecordByName } from "./sanitize-helpers.js";
 
 const DEFAULT_BATCH_SIZE = 5;
 
@@ -70,7 +70,7 @@ export class FigmaRestAdapter implements FigmaDataAdapter {
         depth,
         batchSize,
       );
-      return sanitizeNodesById(nodes);
+      return sanitizeRecord(nodes);
     } catch (err) {
       if (isPayloadTooLargeError(err)) {
         console.log("  Payload too large — switching to chunked fetch...");
@@ -81,7 +81,7 @@ export class FigmaRestAdapter implements FigmaDataAdapter {
           depth,
           batchSize,
         );
-        return sanitizeNodesById(nodes);
+        return sanitizeRecord(nodes);
       }
       throw err;
     }
@@ -101,11 +101,7 @@ export class FigmaRestAdapter implements FigmaDataAdapter {
         depth,
         batchSize,
       );
-      const pages: Record<string, FigmaNode> = {};
-      for (const [id, node] of Object.entries(nodes)) {
-        pages[node.name || id] = sanitizeNode(node);
-      }
-      return pages;
+      return sanitizeRecordByName(nodes);
     } catch (err) {
       if (isPayloadTooLargeError(err)) {
         console.log("  Payload too large — switching to chunked fetch...");
@@ -116,11 +112,7 @@ export class FigmaRestAdapter implements FigmaDataAdapter {
           depth,
           batchSize,
         );
-        const pages: Record<string, FigmaNode> = {};
-        for (const [id, node] of Object.entries(nodes)) {
-          pages[node.name || id] = sanitizeNode(node);
-        }
-        return pages;
+        return sanitizeRecordByName(nodes);
       }
       throw err;
     }
@@ -165,11 +157,7 @@ export class FigmaRestAdapter implements FigmaDataAdapter {
         batchSize,
       );
       this.lastFileName = fileName;
-      const pages: Record<string, FigmaNode> = {};
-      for (const [name, node] of Object.entries(fetchedPages)) {
-        pages[name] = sanitizeNode(node);
-      }
-      return pages;
+      return sanitizeRecord(fetchedPages);
     } catch (err) {
       if (isPayloadTooLargeError(err)) {
         console.log("  Payload too large — fetching page list and chunking...");
@@ -189,22 +177,10 @@ export class FigmaRestAdapter implements FigmaDataAdapter {
           batchSize,
           precomputedShallow,
         );
-        const pages: Record<string, FigmaNode> = {};
-        for (const [id, node] of Object.entries(nodes)) {
-          pages[node.name || id] = sanitizeNode(node);
-        }
-        return pages;
+        return sanitizeRecordByName(nodes);
       }
       throw err;
     }
   }
-}
-
-function sanitizeNodesById(nodes: Record<string, FigmaNode>): Record<string, FigmaNode> {
-  const result: Record<string, FigmaNode> = {};
-  for (const [id, node] of Object.entries(nodes)) {
-    result[id] = sanitizeNode(node);
-  }
-  return result;
 }
 
