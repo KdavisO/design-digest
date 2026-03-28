@@ -166,6 +166,7 @@ describe("findExistingIssue", () => {
     const url = fetchSpy.mock.calls[0][0] as string;
     expect(url).toContain("keyword=%5BDesignDigest%5D+abc123+page%3AHome");
     expect(url).toContain("count=100");
+    expect(url).toContain("offset=0");
   });
 
   it("excludes closed issues (status.id === 4)", async () => {
@@ -242,22 +243,92 @@ describe("findExistingIssue", () => {
     );
   });
 
-  it("logs warning when results reach the limit (100)", async () => {
-    const issues = Array.from({ length: 100 }, (_, i) => ({
+  it("paginates when first page is full and finds match on second page", async () => {
+    const page1Issues = Array.from({ length: 100 }, (_, i) => ({
       id: i + 1,
       issueKey: `TEST-${i + 1}`,
       summary: "changes",
       description: "no match here",
     }));
-    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
-      new Response(JSON.stringify(issues), { status: 200 }),
-    );
+    const page2Match = {
+      id: 101,
+      issueKey: "TEST-101",
+      summary: "found it",
+      description: "[DesignDigest] abc123 node:1:2\n\ntest",
+      status: { id: 1, name: "Open" },
+    };
+    const fetchSpy = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(page1Issues), { status: 200 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify([page2Match]), { status: 200 }),
+      );
+
+    const result = await findExistingIssue(mockConfig, "[DesignDigest] abc123 node:1:2");
+
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    const secondUrl = fetchSpy.mock.calls[1][0] as string;
+    expect(secondUrl).toContain("offset=100");
+    expect(result).toEqual({
+      id: 101,
+      issueKey: "TEST-101",
+      summary: "found it",
+      description: "[DesignDigest] abc123 node:1:2\n\ntest",
+    });
+  });
+
+  it("stops pagination when a page returns fewer than MAX_COUNT results", async () => {
+    const page1Issues = Array.from({ length: 100 }, (_, i) => ({
+      id: i + 1,
+      issueKey: `TEST-${i + 1}`,
+      summary: "changes",
+      description: "no match here",
+    }));
+    const page2Issues = Array.from({ length: 50 }, (_, i) => ({
+      id: 101 + i,
+      issueKey: `TEST-${101 + i}`,
+      summary: "changes",
+      description: "no match here",
+    }));
+    const fetchSpy = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(page1Issues), { status: 200 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(page2Issues), { status: 200 }),
+      );
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const result = await findExistingIssue(mockConfig, "[DesignDigest] abc123 node:1:2");
+
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    expect(result).toBeNull();
+    expect(warnSpy).not.toHaveBeenCalled();
+    warnSpy.mockRestore();
+  });
+
+  it("logs warning when pagination limit is reached", async () => {
+    // MAX_PAGES = 10, each page returns 100 issues = 1000 total
+    const fullPage = Array.from({ length: 100 }, (_, i) => ({
+      id: i + 1,
+      issueKey: `TEST-${i + 1}`,
+      summary: "changes",
+      description: "no match here",
+    }));
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    for (let p = 0; p < 10; p++) {
+      fetchSpy.mockResolvedValueOnce(
+        new Response(JSON.stringify(fullPage), { status: 200 }),
+      );
+    }
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
     await findExistingIssue(mockConfig, "[DesignDigest] abc123 node:1:2");
 
+    expect(fetchSpy).toHaveBeenCalledTimes(10);
     expect(warnSpy).toHaveBeenCalledOnce();
-    expect(warnSpy.mock.calls[0][0]).toContain("100 issues (limit: 100)");
+    expect(warnSpy.mock.calls[0][0]).toContain("1000 issues fetched across 10 pages");
     warnSpy.mockRestore();
   });
 
