@@ -1,6 +1,7 @@
 import type { FigmaNode, FigmaVersion, FigmaUser } from "../figma-client.js";
-import { sanitizeNode, PROACTIVE_CHUNK_THRESHOLD } from "../figma-client.js";
+import { PROACTIVE_CHUNK_THRESHOLD } from "../figma-client.js";
 import type { FigmaDataAdapter, FetchPagesOptions } from "./figma-data-adapter.js";
+import { sanitizeNode, sanitizeRecord } from "./sanitize-helpers.js";
 
 /**
  * MCP response structure from Figma MCP's `use_figma` tool.
@@ -88,11 +89,7 @@ export class FigmaMcpAdapter implements FigmaDataAdapter {
    * Useful when Claude has already extracted and structured the page data.
    */
   static fromPages(pages: Record<string, FigmaNode>): FigmaMcpAdapter {
-    const sanitized: Record<string, FigmaNode> = {};
-    for (const [name, node] of Object.entries(pages)) {
-      sanitized[name] = sanitizeNode(node);
-    }
-    return new FigmaMcpAdapter(sanitized);
+    return new FigmaMcpAdapter(sanitizeRecord(pages));
   }
 
   /**
