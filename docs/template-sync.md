@@ -27,12 +27,15 @@
 | 共有ルール | `.claude/rules/git-conventions.md`, `.claude/rules/parallel-workflow.md` | 同期する |
 | 共有コマンド | `.claude/commands/*.md` | 同期する |
 | 共有スキル | `.claude/skills/*.md`（テンプレート提供分） | 同期する |
+| 共有設定 | `.claude/settings.json` | 同期する |
 | ワークフロー | `.github/workflows/template-sync.yml` | 同期する |
-| プロジェクト固有 | `.claude/CLAUDE.md`, `.claude/settings.json` | **除外** |
+| プロジェクト固有設定 | `.claude/CLAUDE.md` | **除外** |
+| プロジェクト固有設定（ローカル） | `.claude/settings.local.json` | **除外**（gitignored） |
 | プロジェクト構造 | `.claude/rules/project-structure.md` | **除外** |
+| gitignore | `.gitignore` | **除外**（※ダウンストリーム側の `.templatesyncignore` に指定されている場合のみ） |
 | セットアップ | `SETUP.md` | **除外** |
 
-除外ファイルは `.templatesyncignore` で管理する。
+除外ファイルはダウンストリーム側の `.templatesyncignore` で管理する。テンプレート側の `.templatesyncignore` は新規プロジェクト作成時の初期値としてコピーされるが、その後テンプレートで変更してもダウンストリームには同期されない（後述の「`.templatesyncignore` の扱い」を参照）。
 
 ## セットアップ手順
 
@@ -114,6 +117,76 @@ gh workflow run template-sync.yml
 3. 競合を解決し、結果をプッシュしてPRをマージ
 
 頻繁に競合するファイルは `.templatesyncignore` への追加を検討する。
+
+## settings.json と settings.local.json の使い分け
+
+Claude Code は `.claude/settings.json` と `.claude/settings.local.json` の設定を**マージ**して読み込む。このマージ動作を活用し、テンプレート共通設定とプロジェクト固有設定を分離する。
+
+### マージ動作
+
+| フィールド種別 | 動作 | 例 |
+|---|---|---|
+| 配列（`permissions.allow` 等） | 和集合マージ | 両ファイルの allow ルールが全て有効 |
+| オブジェクト（`hooks`, `env` 等） | ディープマージ | 両ファイルの hooks が全て適用 |
+| プリミティブ（文字列, 真偽値） | `settings.local.json` が優先 | |
+
+### 使い分けルール
+
+| ファイル | 役割 | 管理 |
+|---|---|---|
+| `.claude/settings.json` | テンプレート共通設定（permissions, hooks, env） | テンプレートが管理。template-sync で同期される。**ダウンストリームでの直接編集は避ける** |
+| `.claude/settings.local.json` | プロジェクト固有の追加設定 | 各プロジェクトが管理。`.gitignore` に含まれ、同期対象外 |
+
+### ダウンストリームでの設定追加例
+
+プロジェクト固有の permissions を追加したい場合、`.claude/settings.local.json` に記載する:
+
+```json
+{
+  "permissions": {
+    "allow": [
+      "Bash(docker *)",
+      "Bash(kubectl *)"
+    ]
+  }
+}
+```
+
+この設定は `settings.json` のテンプレート共通 permissions とマージされ、両方が有効になる。
+
+### 移行手順（既存ダウンストリーム向け）
+
+`settings.json` がこれまで `.templatesyncignore` で除外されていたため、既存のダウンストリームでは `settings.json` にプロジェクト固有の設定が含まれている可能性がある。以下の手順で移行する:
+
+1. `settings.json` のうち、テンプレートにない独自の設定を特定する
+2. 独自の設定を `.claude/settings.local.json` に移動する
+3. `settings.json` をテンプレートの内容で上書きする（次回の template-sync PR で自動的に行われる）
+4. プロジェクトの `.gitignore` に以下の行が含まれていることを確認する:
+
+   ```gitignore
+   .claude/settings.local.json
+   ```
+
+> **注意**: テンプレートには `.gitignore` を含めていない（ダウンストリームの既存 `.gitignore` を上書きしてしまうため）。上記の `.gitignore` 設定はダウンストリーム側で手動で追加すること。
+
+### `.templatesyncignore` の扱い
+
+actions-template-sync v2 は、同期時に**ダウンストリーム側の `.templatesyncignore` を常に復元・保持**する。そのため、テンプレートリポジトリ内の `.templatesyncignore` を変更しても、その変更は同期PRを通じてダウンストリームには配布されない。
+
+この前提から、`.templatesyncignore` に関しては次のように運用する:
+
+- **新規プロジェクト作成時**: テンプレートからリポジトリを作成したタイミングでの `.templatesyncignore` が初期状態としてコピーされる
+- **その後の運用**: 各プロジェクトは、自身の要件に合わせてダウンストリーム側の `.templatesyncignore` を直接編集・管理する（テンプレート側の後追い更新は自動反映されない）
+- **テンプレート側の `.templatesyncignore`**: あくまで「推奨設定のサンプル」として管理し、新規プロジェクト向けの初期値と位置づける
+
+既存プロジェクトで `.templatesyncignore` の設定を変更したい場合は、**各ダウンストリームリポジトリで `.templatesyncignore` を直接編集**し、その後に同期を実行する。
+
+### 既存ダウンストリームの `.gitignore` 上書き防止
+
+テンプレートから `.gitignore` を削除しているが、既存ダウンストリームの `.templatesyncignore` には `.gitignore` が含まれていない可能性がある。上書き防止を確実にするため、各ダウンストリームで以下を確認すること:
+
+1. `.templatesyncignore` に `.gitignore` が含まれていることを確認（なければ追加）
+2. 同期を実行して `.gitignore` が上書きされないことを検証
 
 ## 既存プロジェクトへの導入
 
