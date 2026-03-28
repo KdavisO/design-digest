@@ -49,9 +49,23 @@ jobs:
           FIGMA_FILE_KEY: ${{ secrets.FIGMA_FILE_KEY }}
           FIGMA_WATCH_PAGES: ${{ vars.FIGMA_WATCH_PAGES }}
           FIGMA_WATCH_NODE_IDS: ${{ vars.FIGMA_WATCH_NODE_IDS }}
+          FIGMA_NODE_DEPTH: ${{ vars.FIGMA_NODE_DEPTH }}
+          FIGMA_BATCH_SIZE: ${{ vars.FIGMA_BATCH_SIZE }}
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           CLAUDE_SUMMARY_ENABLED: ${{ vars.CLAUDE_SUMMARY_ENABLED }}
+          GITHUB_ISSUE_ENABLED: ${{ vars.GITHUB_ISSUE_ENABLED }}
+          GITHUB_ISSUE_TOKEN: ${{ secrets.GITHUB_ISSUE_TOKEN }}
+          GITHUB_ISSUE_REPO: ${{ vars.GITHUB_ISSUE_REPO }}
+          GITHUB_ISSUE_LABELS: ${{ vars.GITHUB_ISSUE_LABELS }}
+          GITHUB_ISSUE_ASSIGNEES: ${{ vars.GITHUB_ISSUE_ASSIGNEES }}
+          BACKLOG_ENABLED: ${{ vars.BACKLOG_ENABLED }}
+          BACKLOG_API_KEY: ${{ secrets.BACKLOG_API_KEY }}
+          BACKLOG_SPACE_ID: ${{ vars.BACKLOG_SPACE_ID }}
+          BACKLOG_PROJECT_ID: ${{ vars.BACKLOG_PROJECT_ID }}
+          BACKLOG_ISSUE_TYPE_ID: ${{ vars.BACKLOG_ISSUE_TYPE_ID }}
+          BACKLOG_PRIORITY_ID: ${{ vars.BACKLOG_PRIORITY_ID }}
+          BACKLOG_ASSIGNEE_ID: ${{ vars.BACKLOG_ASSIGNEE_ID }}
 
       - name: Upload snapshot
         uses: actions/upload-artifact@v4
