@@ -19,7 +19,7 @@ export interface GitHubIssueResponse {
   title: string;
   html_url: string;
   body: string | null;
-  pull_request?: unknown;
+  pull_request?: { url: string };
 }
 
 /**
@@ -140,7 +140,7 @@ export async function createGitHubIssue(
 ): Promise<GitHubIssue> {
   const url = `https://api.github.com/repos/${config.owner}/${config.repo}/issues`;
 
-  const payload: Record<string, unknown> = { title, body };
+  const payload: { title: string; body: string; labels?: string[]; assignees?: string[] } = { title, body };
   if (config.labels.length > 0) {
     payload.labels = config.labels;
   }
