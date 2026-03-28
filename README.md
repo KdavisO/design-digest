@@ -248,18 +248,10 @@ Each Backlog issue description includes a `[DesignDigest] {fileKey}` marker. Bef
 
 If you use Claude Code CLI, you can run design checks via the `figma-developer-mcp` MCP server. The MCP server reuses the same `FIGMA_TOKEN` from your environment — no separate token management needed.
 
-Ensure `FIGMA_TOKEN` is exported in your shell before launching Claude Code (e.g., `export FIGMA_TOKEN=...` or source your `.env` file). Then create `.mcp.json` in the repository root:
+Ensure `FIGMA_TOKEN` is exported in your shell before launching Claude Code (e.g., `export FIGMA_TOKEN=...` or source your `.env` file). Then copy the example config to create `.mcp.json` in the repository root:
 
-```json
-{
-  "mcpServers": {
-    "figma-developer-mcp": {
-      "command": "npx",
-      "args": ["-y", "figma-developer-mcp", "--stdio"],
-      "env": { "FIGMA_API_KEY": "${FIGMA_TOKEN}" }
-    }
-  }
-}
+```bash
+cp .mcp.json.example .mcp.json
 ```
 
 `${FIGMA_TOKEN}` is expanded by Claude Code from your process environment. Then run `/design-check` in Claude Code.
