@@ -76,10 +76,12 @@ export class FigmaMcpAdapter implements FigmaDataAdapter {
    * Later responses override earlier ones for the same page name (last-write-wins).
    */
   static fromMcpResponses(responses: McpFigmaFileResponse[]): FigmaMcpAdapter {
-    const merged: Record<string, FigmaNode> = {};
+    const merged = Object.create(null) as Record<string, FigmaNode>;
     for (const response of responses) {
       const pages = extractPagesFromResponse(response);
-      Object.assign(merged, pages);
+      for (const [key, value] of Object.entries(pages)) {
+        merged[key] = value;
+      }
     }
     return new FigmaMcpAdapter(merged);
   }
