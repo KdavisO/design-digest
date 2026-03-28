@@ -40,17 +40,9 @@ Figma MCP 経由でデザイン差分検出を実行する。
    FIGMA_TOKEN=figd_xxx
    ```
 
-2. リポジトリルートの `.mcp.json`（Git 管理外。`.gitignore` に含まれています）に以下を追加:
-   ```json
-   {
-     "mcpServers": {
-       "figma-developer-mcp": {
-         "command": "npx",
-         "args": ["-y", "figma-developer-mcp", "--stdio"],
-         "env": { "FIGMA_API_KEY": "${FIGMA_TOKEN}" }
-       }
-     }
-   }
+2. リポジトリルートの `.mcp.json.example` をコピーして `.mcp.json` を作成する（Git 管理外。`.gitignore` に含まれています）:
+   ```bash
+   cp .mcp.json.example .mcp.json
    ```
    - `${FIGMA_TOKEN}` は **Claude Code 起動時の環境変数** から解決される想定です
    - `.env` を使う場合は、Claude Code を起動する前に `export FIGMA_TOKEN=...` するか、Claude Code 側で `.env` 自動読込設定を有効にしておいてください（いずれもない場合、`${FIGMA_TOKEN}` は展開されずセットアップが失敗します）
