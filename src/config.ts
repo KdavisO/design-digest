@@ -4,6 +4,8 @@ export interface Config {
   figmaWatchPages: string[];
   figmaWatchNodeIds: string[];
   slackWebhookUrl: string | undefined;
+  slackIconUrl: string | undefined;
+  slackIconEmoji: string | undefined;
   anthropicApiKey: string | undefined;
   claudeSummaryEnabled: boolean;
   githubIssueEnabled: boolean;
@@ -37,6 +39,8 @@ export function loadConfig(): Config {
     figmaWatchPages: csvList("FIGMA_WATCH_PAGES"),
     figmaWatchNodeIds: csvList("FIGMA_WATCH_NODE_IDS"),
     slackWebhookUrl: process.env.SLACK_WEBHOOK_URL || undefined,
+    slackIconUrl: process.env.SLACK_ICON_URL || undefined,
+    slackIconEmoji: process.env.SLACK_ICON_EMOJI || undefined,
     anthropicApiKey: process.env.ANTHROPIC_API_KEY || undefined,
     claudeSummaryEnabled: process.env.CLAUDE_SUMMARY_ENABLED === "true",
     githubIssueEnabled: process.env.GITHUB_ISSUE_ENABLED === "true",
