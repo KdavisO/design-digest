@@ -634,6 +634,70 @@ describe("fetchFileProactiveIter", () => {
     expect(pageEntry.chunked).toBe(true);
     expect(pageEntry.node.children).toHaveLength(60);
   });
+
+  it("fetches small pages in batches when smallPageBatchSize is set", async () => {
+    // Create 4 small pages (< 50 children each)
+    const shallowFile: FigmaFile = {
+      name: "Test",
+      lastModified: "2024-01-01",
+      version: "1",
+      document: {
+        id: "0:0",
+        name: "Document",
+        type: "DOCUMENT",
+        children: [
+          { id: "1:0", name: "Page1", type: "CANVAS", children: [{ id: "1:1", name: "F1", type: "FRAME" }] },
+          { id: "2:0", name: "Page2", type: "CANVAS", children: [{ id: "2:1", name: "F2", type: "FRAME" }] },
+          { id: "3:0", name: "Page3", type: "CANVAS", children: [{ id: "3:1", name: "F3", type: "FRAME" }] },
+          { id: "4:0", name: "Page4", type: "CANVAS", children: [{ id: "4:1", name: "F4", type: "FRAME" }] },
+        ],
+      },
+    };
+
+    const makeFull = (id: string, name: string, childId: string, childName: string): FigmaNode => ({
+      id, name, type: "CANVAS",
+      children: [{ id: childId, name: childName, type: "FRAME", fills: [] }],
+    });
+
+    const fetchSpy = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(mockFileResponse(shallowFile))
+      // Batch 1: pages 1 & 2
+      .mockResolvedValueOnce(mockNodesResponse({
+        "1:0": makeFull("1:0", "Page1", "1:1", "F1"),
+        "2:0": makeFull("2:0", "Page2", "2:1", "F2"),
+      }))
+      // Batch 2: pages 3 & 4
+      .mockResolvedValueOnce(mockNodesResponse({
+        "3:0": makeFull("3:0", "Page3", "3:1", "F3"),
+        "4:0": makeFull("4:0", "Page4", "4:1", "F4"),
+      }));
+
+    // Use smallPageBatchSize=2 so 4 pages are fetched in 2 batches
+    const iter = fetchFileProactiveIter("token", "fileKey", [], undefined, 5, 2);
+    const results: (PageEntry | PageIterMeta)[] = [];
+    for await (const item of iter) {
+      results.push(item);
+    }
+
+    // 1 shallow file fetch + 2 batch fetchNodes calls = 3 total
+    expect(fetchSpy).toHaveBeenCalledTimes(3);
+
+    // Verify that the two /nodes calls were made with the expected batched page IDs
+    const firstNodesUrl = new URL(fetchSpy.mock.calls[1][0] as string);
+    const secondNodesUrl = new URL(fetchSpy.mock.calls[2][0] as string);
+
+    const firstIds = (firstNodesUrl.searchParams.get("ids") ?? "").split(",").filter(Boolean).sort();
+    const secondIds = (secondNodesUrl.searchParams.get("ids") ?? "").split(",").filter(Boolean).sort();
+
+    expect(firstIds).toEqual(["1:0", "2:0"].sort());
+    expect(secondIds).toEqual(["3:0", "4:0"].sort());
+
+    expect(results).toHaveLength(5); // meta + 4 pages
+    expect((results[1] as PageEntry).pageName).toBe("Page1");
+    expect((results[2] as PageEntry).pageName).toBe("Page2");
+    expect((results[3] as PageEntry).pageName).toBe("Page3");
+    expect((results[4] as PageEntry).pageName).toBe("Page4");
+  });
 });
 
 describe("fetchNodesProactive", () => {
