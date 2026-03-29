@@ -7,11 +7,12 @@ import {
   fetchNodesChunked,
   adaptiveBatchSize,
   fetchFileProactive,
+  fetchFileProactiveIter,
   fetchNodesProactive,
   isPayloadTooLargeError,
   fetchFileName,
 } from "./figma-client.js";
-import type { FigmaNode, FigmaFile, FigmaVersion } from "./figma-client.js";
+import type { FigmaNode, FigmaFile, FigmaVersion, PageEntry, PageIterMeta } from "./figma-client.js";
 
 describe("sanitizeNode", () => {
   it("removes noise keys", () => {
@@ -519,6 +520,113 @@ describe("fetchFileProactive", () => {
     expect(chunkedPages).toEqual(["BigPage"]);
     expect(pages["BigPage"]).toBeDefined();
     expect(pages["BigPage"].children).toHaveLength(60);
+  });
+});
+
+describe("fetchFileProactiveIter", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  function mockFileResponse(file: FigmaFile) {
+    return new Response(JSON.stringify(file), { status: 200 });
+  }
+
+  function mockNodesResponse(nodes: Record<string, FigmaNode>) {
+    const wrapped: Record<string, { document: FigmaNode }> = {};
+    for (const [id, node] of Object.entries(nodes)) {
+      wrapped[id] = { document: node };
+    }
+    return new Response(JSON.stringify({ nodes: wrapped }), { status: 200 });
+  }
+
+  it("yields metadata first, then pages one at a time", async () => {
+    const shallowFile: FigmaFile = {
+      name: "Test",
+      lastModified: "2024-01-01",
+      version: "1",
+      document: {
+        id: "0:0",
+        name: "Document",
+        type: "DOCUMENT",
+        children: [
+          { id: "1:0", name: "Page1", type: "CANVAS", children: [
+            { id: "1:1", name: "Frame", type: "FRAME" },
+          ]},
+          { id: "2:0", name: "Page2", type: "CANVAS", children: [
+            { id: "2:1", name: "Frame2", type: "FRAME" },
+          ]},
+        ],
+      },
+    };
+    const fullPage1: FigmaNode = {
+      id: "1:0", name: "Page1", type: "CANVAS",
+      children: [{ id: "1:1", name: "Frame", type: "FRAME", fills: [] }],
+    };
+    const fullPage2: FigmaNode = {
+      id: "2:0", name: "Page2", type: "CANVAS",
+      children: [{ id: "2:1", name: "Frame2", type: "FRAME", fills: [] }],
+    };
+
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(mockFileResponse(shallowFile))
+      .mockResolvedValueOnce(mockNodesResponse({ "1:0": fullPage1, "2:0": fullPage2 }));
+
+    const iter = fetchFileProactiveIter("token", "fileKey", []);
+    const results: (PageEntry | PageIterMeta)[] = [];
+    for await (const item of iter) {
+      results.push(item);
+    }
+
+    // First yield is metadata
+    expect(results[0]).toHaveProperty("fileName", "Test");
+    expect((results[0] as PageIterMeta).targetPageIds).toEqual(["1:0", "2:0"]);
+    // Subsequent yields are page entries
+    expect(results).toHaveLength(3); // meta + 2 pages
+    expect((results[1] as PageEntry).pageName).toBe("Page1");
+    expect((results[2] as PageEntry).pageName).toBe("Page2");
+  });
+
+  it("yields large pages individually with chunked=true", async () => {
+    const manyChildren = Array.from({ length: 60 }, (_, i) => ({
+      id: `1:${i + 1}`, name: `Child${i + 1}`, type: "FRAME" as const,
+    }));
+    const shallowFile: FigmaFile = {
+      name: "Test",
+      lastModified: "2024-01-01",
+      version: "1",
+      document: {
+        id: "0:0",
+        name: "Document",
+        type: "DOCUMENT",
+        children: [
+          { id: "1:0", name: "BigPage", type: "CANVAS", children: manyChildren },
+        ],
+      },
+    };
+
+    const fetchSpy = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(mockFileResponse(shallowFile));
+
+    for (let i = 0; i < 60; i += 3) {
+      const batch: Record<string, FigmaNode> = {};
+      for (let j = i; j < Math.min(i + 3, 60); j++) {
+        batch[`1:${j + 1}`] = { id: `1:${j + 1}`, name: `Child${j + 1}`, type: "FRAME" };
+      }
+      fetchSpy.mockResolvedValueOnce(mockNodesResponse(batch));
+    }
+
+    const iter = fetchFileProactiveIter("token", "fileKey", []);
+    const results: (PageEntry | PageIterMeta)[] = [];
+    for await (const item of iter) {
+      results.push(item);
+    }
+
+    expect(results).toHaveLength(2); // meta + 1 large page
+    const pageEntry = results[1] as PageEntry;
+    expect(pageEntry.pageName).toBe("BigPage");
+    expect(pageEntry.chunked).toBe(true);
+    expect(pageEntry.node.children).toHaveLength(60);
   });
 });
 

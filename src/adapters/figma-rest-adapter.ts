@@ -1,6 +1,6 @@
 import type { FigmaNode, FigmaVersion, FigmaUser } from "../figma-client.js";
 import {
-  fetchFileProactive,
+  fetchFileProactiveIter,
   fetchNodesProactive,
   fetchNodesChunked,
   fetchFile,
@@ -10,8 +10,9 @@ import {
   filterWatchTargets,
   isPayloadTooLargeError,
 } from "../figma-client.js";
+import type { PageEntry, PageIterMeta } from "../figma-client.js";
 import type { FigmaDataAdapter, FetchPagesOptions } from "./figma-data-adapter.js";
-import { sanitizeRecord, sanitizeRecordByName } from "./sanitize-helpers.js";
+import { sanitizeNode, sanitizeRecord, sanitizeRecordByName } from "./sanitize-helpers.js";
 
 const DEFAULT_BATCH_SIZE = 5;
 
@@ -149,15 +150,29 @@ export class FigmaRestAdapter implements FigmaDataAdapter {
     batchSize: number,
   ): Promise<Record<string, FigmaNode>> {
     try {
-      const { pages: fetchedPages, fileName } = await fetchFileProactive(
+      // Use the async generator to process pages one at a time,
+      // sanitizing each page before fetching the next.
+      // This keeps peak memory proportional to the largest single page.
+      const iter = fetchFileProactiveIter(
         this.token,
         fileKey,
         watchPages,
         depth,
         batchSize,
       );
-      this.lastFileName = fileName;
-      return sanitizeRecord(fetchedPages);
+
+      // First yield is metadata
+      const metaResult = await iter.next();
+      const meta = metaResult.value as PageIterMeta;
+      this.lastFileName = meta.fileName;
+
+      const pages: Record<string, FigmaNode> = Object.create(null);
+      for await (const entry of iter) {
+        const { pageName, node } = entry as PageEntry;
+        pages[pageName] = sanitizeNode(node);
+      }
+
+      return pages;
     } catch (err) {
       if (isPayloadTooLargeError(err)) {
         console.log("  Payload too large — fetching page list and chunking...");
