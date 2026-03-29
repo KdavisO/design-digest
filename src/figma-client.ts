@@ -261,6 +261,7 @@ export async function fetchFileProactive(
 
 /** Entry yielded by fetchFileProactiveIter */
 export interface PageEntry {
+  kind: "page";
   pageName: string;
   node: FigmaNode;
   chunked: boolean;
@@ -268,6 +269,7 @@ export interface PageEntry {
 
 /** Metadata yielded as the first item from fetchFileProactiveIter */
 export interface PageIterMeta {
+  kind: "meta";
   fileName: string;
   targetPageIds: string[];
 }
@@ -296,7 +298,7 @@ export async function* fetchFileProactiveIter(
   const targetPageIds = targetPages.map((p) => p.id);
 
   // Yield metadata first so callers can access fileName / targetPageIds
-  yield { fileName: shallowFile.name, targetPageIds } as PageIterMeta;
+  yield { kind: "meta", fileName: shallowFile.name, targetPageIds };
 
   // Classify pages
   const smallPages: FigmaNode[] = [];
@@ -314,13 +316,13 @@ export async function* fetchFileProactiveIter(
   if (smallPages.length > 0) {
     if (depth === 1) {
       for (const page of smallPages) {
-        yield { pageName: page.name || page.id, node: page, chunked: false };
+        yield { kind: "page", pageName: page.name || page.id, node: page, chunked: false };
       }
     } else {
       const smallPageIds = smallPages.map((p) => p.id);
       const nodes = await fetchNodes(token, fileKey, smallPageIds, depth);
       for (const [id, node] of Object.entries(nodes)) {
-        yield { pageName: node.name || id, node, chunked: false };
+        yield { kind: "page", pageName: node.name || id, node, chunked: false };
       }
     }
   }
@@ -328,7 +330,7 @@ export async function* fetchFileProactiveIter(
   // Yield large pages one at a time
   for (const page of largePages) {
     if (depth === 1) {
-      yield { pageName: page.name || page.id, node: page, chunked: false };
+      yield { kind: "page", pageName: page.name || page.id, node: page, chunked: false };
     } else {
       const childCount = page.children?.length ?? 0;
       const effectiveBatch = adaptiveBatchSize(childCount, batchSize);
@@ -346,7 +348,7 @@ export async function* fetchFileProactiveIter(
       );
       const node = chunkedNodes[page.id];
       if (node) {
-        yield { pageName: node.name || page.id, node, chunked: true };
+        yield { kind: "page", pageName: node.name || page.id, node, chunked: true };
       }
     }
   }

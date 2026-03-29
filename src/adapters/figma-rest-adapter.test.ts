@@ -65,8 +65,8 @@ describe("FigmaRestAdapter", () => {
     const page: FigmaNode = { id: "1:1", name: "Page 1", type: "CANVAS" };
     mockFetchFileProactiveIter.mockReturnValue(
       mockIter(
-        { fileName: "Test File", targetPageIds: ["1:1"] },
-        [{ pageName: "Page 1", node: page, chunked: false }],
+        { kind: "meta", fileName: "Test File", targetPageIds: ["1:1"] },
+        [{ kind: "page", pageName: "Page 1", node: page, chunked: false }],
       )() as ReturnType<typeof fetchFileProactiveIter>,
     );
 
@@ -111,7 +111,7 @@ describe("FigmaRestAdapter", () => {
   it("should pass depth and batchSize options", async () => {
     mockFetchFileProactiveIter.mockReturnValue(
       mockIter(
-        { fileName: "Test File", targetPageIds: [] },
+        { kind: "meta", fileName: "Test File", targetPageIds: [] },
         [],
       )() as ReturnType<typeof fetchFileProactiveIter>,
     );
@@ -292,8 +292,8 @@ describe("FigmaRestAdapter", () => {
     };
     mockFetchFileProactiveIter.mockReturnValue(
       mockIter(
-        { fileName: "Test File", targetPageIds: ["1:1"] },
-        [{ pageName: "Page 1", node: page, chunked: false }],
+        { kind: "meta", fileName: "Test File", targetPageIds: ["1:1"] },
+        [{ kind: "page", pageName: "Page 1", node: page, chunked: false }],
       )() as ReturnType<typeof fetchFileProactiveIter>,
     );
 

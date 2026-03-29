@@ -10,7 +10,6 @@ import {
   filterWatchTargets,
   isPayloadTooLargeError,
 } from "../figma-client.js";
-import type { PageEntry, PageIterMeta } from "../figma-client.js";
 import type { FigmaDataAdapter, FetchPagesOptions } from "./figma-data-adapter.js";
 import { sanitizeNode, sanitizeRecord, sanitizeRecordByName } from "./sanitize-helpers.js";
 
@@ -161,15 +160,17 @@ export class FigmaRestAdapter implements FigmaDataAdapter {
         batchSize,
       );
 
-      // First yield is metadata
+      // First yield is metadata — validate via discriminant
       const metaResult = await iter.next();
-      const meta = metaResult.value as PageIterMeta;
-      this.lastFileName = meta.fileName;
+      if (metaResult.done || !metaResult.value || metaResult.value.kind !== "meta") {
+        throw new Error("Expected initial metadata from fetchFileProactiveIter");
+      }
+      this.lastFileName = metaResult.value.fileName;
 
       const pages: Record<string, FigmaNode> = Object.create(null);
       for await (const entry of iter) {
-        const { pageName, node } = entry as PageEntry;
-        pages[pageName] = sanitizeNode(node);
+        if (entry.kind !== "page") continue;
+        pages[entry.pageName] = sanitizeNode(entry.node);
       }
 
       return pages;

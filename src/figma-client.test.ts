@@ -578,11 +578,13 @@ describe("fetchFileProactiveIter", () => {
       results.push(item);
     }
 
-    // First yield is metadata
+    // First yield is metadata with kind discriminant
+    expect(results[0]).toHaveProperty("kind", "meta");
     expect(results[0]).toHaveProperty("fileName", "Test");
     expect((results[0] as PageIterMeta).targetPageIds).toEqual(["1:0", "2:0"]);
-    // Subsequent yields are page entries
+    // Subsequent yields are page entries with kind discriminant
     expect(results).toHaveLength(3); // meta + 2 pages
+    expect(results[1]).toHaveProperty("kind", "page");
     expect((results[1] as PageEntry).pageName).toBe("Page1");
     expect((results[2] as PageEntry).pageName).toBe("Page2");
   });
@@ -624,6 +626,7 @@ describe("fetchFileProactiveIter", () => {
 
     expect(results).toHaveLength(2); // meta + 1 large page
     const pageEntry = results[1] as PageEntry;
+    expect(pageEntry.kind).toBe("page");
     expect(pageEntry.pageName).toBe("BigPage");
     expect(pageEntry.chunked).toBe(true);
     expect(pageEntry.node.children).toHaveLength(60);
