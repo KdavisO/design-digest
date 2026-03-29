@@ -13,6 +13,7 @@ import {
   fetchFileName,
   fetchFile,
   fetchVersions,
+  fetchNodes,
 } from "./figma-client.js";
 import type { FigmaNode, FigmaFile, FigmaVersion, PageEntry, PageIterMeta } from "./figma-client.js";
 
@@ -877,5 +878,40 @@ describe("API response schema validation", () => {
     await expect(fetchVersions("token", "fileKey")).rejects.toThrow(
       /response validation failed/,
     );
+  });
+
+  it("rejects fetchNodes response with invalid node structure", async () => {
+    // nodes["1:0"].document is missing 'id' field
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          nodes: { "1:0": { document: { name: "Page", type: "CANVAS" } } },
+        }),
+        { status: 200 },
+      ),
+    );
+
+    await expect(fetchNodes("token", "fileKey", ["1:0"])).rejects.toThrow(
+      /response validation failed/,
+    );
+  });
+
+  it("accepts valid fetchNodes response with extra properties", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          nodes: {
+            "1:0": {
+              document: { id: "1:0", name: "Page", type: "CANVAS", fills: [] },
+              components: {},
+            },
+          },
+        }),
+        { status: 200 },
+      ),
+    );
+
+    const result = await fetchNodes("token", "fileKey", ["1:0"]);
+    expect(result["1:0"].name).toBe("Page");
   });
 });
