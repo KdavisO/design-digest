@@ -149,9 +149,10 @@ export class FigmaRestAdapter implements FigmaDataAdapter {
     batchSize: number,
   ): Promise<Record<string, FigmaNode>> {
     try {
-      // Use the async generator to process pages one at a time,
-      // sanitizing each page before fetching the next.
-      // This keeps peak memory proportional to the largest single page.
+      // Use the async generator to process pages one at a time as they are yielded,
+      // sanitizing each page before storing it.
+      // This keeps peak memory roughly proportional to the largest single page,
+      // since large pages are fetched individually (small pages are batched).
       const iter = fetchFileProactiveIter(
         this.token,
         fileKey,
