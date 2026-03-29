@@ -38,6 +38,10 @@ export interface FigmaVersionsResponse {
   versions: FigmaVersion[];
 }
 
+export interface FigmaNodesResponse {
+  nodes: Record<string, { document: FigmaNode }>;
+}
+
 const FIGMA_API_BASE = "https://api.figma.com/v1";
 
 const NOISE_KEYS = new Set([

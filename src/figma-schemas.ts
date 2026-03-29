@@ -5,6 +5,7 @@ import type {
   FigmaVersion,
   FigmaUser,
   FigmaVersionsResponse,
+  FigmaNodesResponse,
 } from "./figma-client.js";
 
 /**
@@ -29,9 +30,10 @@ const baseFigmaNode = z.object({
 
 // Recursive schema using z.lazy for children.
 // Typed against FigmaNode to ensure schema-interface alignment.
+// baseFigmaNode already has passthrough(), so extend() inherits it.
 export const figmaNodeSchema: z.ZodType<FigmaNode> = baseFigmaNode.extend({
   children: z.lazy(() => z.array(figmaNodeSchema)).optional(),
-}).passthrough();
+});
 
 /** Schema for FigmaUser — typed against FigmaUser interface */
 export const figmaUserSchema: z.ZodType<FigmaUser> = z.object({
@@ -62,8 +64,8 @@ export const figmaVersionsResponseSchema: z.ZodType<FigmaVersionsResponse> = z.o
   versions: z.array(figmaVersionSchema),
 }).passthrough();
 
-/** Schema for fetchNodes response (GET /files/:key/nodes) */
-export const figmaNodesResponseSchema = z.object({
+/** Schema for fetchNodes response (GET /files/:key/nodes) — typed against FigmaNodesResponse interface */
+export const figmaNodesResponseSchema: z.ZodType<FigmaNodesResponse> = z.object({
   nodes: z.record(z.string(), z.object({
     document: figmaNodeSchema,
   }).passthrough()),

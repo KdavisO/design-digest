@@ -816,9 +816,9 @@ describe("API response schema validation", () => {
   });
 
   it("rejects fetchFile response missing required fields", async () => {
-    // Missing 'document' field
+    // Missing 'document' and 'version' fields
     vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
-      new Response(JSON.stringify({ name: "Test", lastModified: "2024-01-01" }), { status: 200 }),
+      new Response(JSON.stringify({ name: "Test", lastModified: "2024-01-01", version: "1" }), { status: 200 }),
     );
 
     await expect(fetchFile("token", "fileKey")).rejects.toThrow(
@@ -826,8 +826,8 @@ describe("API response schema validation", () => {
     );
   });
 
-  it("rejects fetchFile response with wrong document type", async () => {
-    // document.id is missing
+  it("rejects fetchFile response with missing document.id", async () => {
+    // document is present but missing required 'id' field
     vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
       new Response(
         JSON.stringify({
