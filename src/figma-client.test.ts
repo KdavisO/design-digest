@@ -72,26 +72,32 @@ describe("sanitizeNode", () => {
   });
 
   it("returns null-prototype objects to prevent prototype pollution", () => {
-    const node = {
-      id: "1",
-      name: "Frame",
-      type: "FRAME",
-      __proto__: { polluted: true },
-      children: [
+    // Use JSON.parse to create a node with "__proto__" as a real own property,
+    // since object literal `__proto__:` is special-cased in JS and may not
+    // appear in Object.entries.
+    const node = JSON.parse(`{
+      "id": "1",
+      "name": "Frame",
+      "type": "FRAME",
+      "__proto__": { "polluted": true },
+      "children": [
         {
-          id: "2",
-          name: "Child",
-          type: "TEXT",
-          constructor: { polluted: true },
-        },
-      ],
-    };
+          "id": "2",
+          "name": "Child",
+          "type": "TEXT",
+          "constructor": { "polluted": true }
+        }
+      ]
+    }`);
     const result = sanitizeNode(node);
 
     // All returned objects should be null-prototype
     expect(Object.getPrototypeOf(result)).toBeNull();
     const child = (result as Record<string, unknown>).children as unknown[];
     expect(Object.getPrototypeOf(child[0])).toBeNull();
+
+    // __proto__ key is preserved as a data property on null-prototype object
+    expect(Object.prototype.hasOwnProperty.call(result, "__proto__")).toBe(true);
 
     // Prototype pollution should not occur
     const plain = {};
