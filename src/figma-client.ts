@@ -188,7 +188,7 @@ export async function fetchFileProactive(
   const shallowFile = await fetchFile(token, fileKey, 1);
   const targetPages = filterWatchTargets(shallowFile, watchPages);
 
-  const pages: Record<string, FigmaNode> = {};
+  const pages: Record<string, FigmaNode> = Object.create(null) as Record<string, FigmaNode>;
   const chunkedPages: string[] = [];
 
   // Step 2: Classify pages by complexity
