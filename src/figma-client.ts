@@ -336,11 +336,19 @@ export async function* fetchFileProactiveIter(
         yield { kind: "page", pageName: page.name || page.id, node: page, chunked: false };
       }
     } else {
-      for (let i = 0; i < smallPages.length; i += smallPageBatchSize) {
-        const batch = smallPages.slice(i, i + smallPageBatchSize);
+      const effectiveSmallPageBatchSize =
+        Number.isFinite(smallPageBatchSize) && smallPageBatchSize > 0
+          ? Math.floor(smallPageBatchSize)
+          : 1;
+
+      for (let i = 0; i < smallPages.length; i += effectiveSmallPageBatchSize) {
+        const batch = smallPages.slice(i, i + effectiveSmallPageBatchSize);
         const batchIds = batch.map((p) => p.id);
         const nodes = await fetchNodes(token, fileKey, batchIds, depth);
-        for (const [id, node] of Object.entries(nodes)) {
+        for (const id of batchIds) {
+          const node = nodes[id];
+          if (!node) continue;
+          delete nodes[id];
           yield { kind: "page", pageName: node.name || id, node, chunked: false };
         }
       }

@@ -681,6 +681,17 @@ describe("fetchFileProactiveIter", () => {
 
     // 1 shallow file fetch + 2 batch fetchNodes calls = 3 total
     expect(fetchSpy).toHaveBeenCalledTimes(3);
+
+    // Verify that the two /nodes calls were made with the expected batched page IDs
+    const firstNodesUrl = new URL(fetchSpy.mock.calls[1][0] as string);
+    const secondNodesUrl = new URL(fetchSpy.mock.calls[2][0] as string);
+
+    const firstIds = (firstNodesUrl.searchParams.get("ids") ?? "").split(",").filter(Boolean).sort();
+    const secondIds = (secondNodesUrl.searchParams.get("ids") ?? "").split(",").filter(Boolean).sort();
+
+    expect(firstIds).toEqual(["1:0", "2:0"].sort());
+    expect(secondIds).toEqual(["3:0", "4:0"].sort());
+
     expect(results).toHaveLength(5); // meta + 4 pages
     expect((results[1] as PageEntry).pageName).toBe("Page1");
     expect((results[2] as PageEntry).pageName).toBe("Page2");
