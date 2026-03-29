@@ -351,7 +351,7 @@ Copilotに再レビューをリクエストし、成功を確認する:
    - 上記 1 → 2 を繰り返す
    - 3回リトライ（合計4回試行）しても確認できない場合: 「⚠ Copilotレビューリクエストの確認に失敗しました」と警告を出力する
 
-**ポーリング再開**（`--auto` モード時）: Copilot再レビューリクエストの**成功が確認できた場合のみ**、`CronCreate` で新しいポーリングタスクを作成（cron: `*/3 * * * *`, prompt: `/review-respond --auto --max-idle 3 {PR番号}`, recurring: true）。`--team` フラグが指定されている場合は prompt を `/review-respond --auto --team --max-idle 3 {PR番号}` とする。新しいタスクIDをcronタスクIDファイル（`/tmp/{project}-review-{ownerRepo}-cron-{PR番号}`）に上書きし、idleカウンターファイルを0にリセットする。※ 再開後の `--max-idle` は常に3に固定される（初回実行時に異なる値が指定されていても引き継がれない）。リクエストが失敗した場合はポーリングを再開せず、警告を出力し、この後の自動ポーリング再開処理のみスキップする（手順7以降は通常どおり実行する）。
+**ポーリング再開**（`--auto` モード時）: Copilot再レビューリクエストの**成功が確認できた場合のみ**、`CronCreate` で新しいポーリングタスクを作成（cron: `*/4 * * * *`, prompt: `/review-respond --auto --max-idle 3 {PR番号}`, recurring: true）。`--team` フラグが指定されている場合は prompt を `/review-respond --auto --team --max-idle 3 {PR番号}` とする。新しいタスクIDをcronタスクIDファイル（`/tmp/{project}-review-{ownerRepo}-cron-{PR番号}`）に上書きし、idleカウンターファイルを0にリセットする。※ 再開後の `--max-idle` は常に3に固定される（初回実行時に異なる値が指定されていても引き継がれない）。リクエストが失敗した場合はポーリングを再開せず、警告を出力し、この後の自動ポーリング再開処理のみスキップする（手順7以降は通常どおり実行する）。
 
 ### 7. レビューコメントへの返信
 
