@@ -183,6 +183,9 @@ export async function fetchNodesChunked(
 /** Threshold for proactive chunking: if a page has more children than this, chunk instead of fetching full. */
 export const PROACTIVE_CHUNK_THRESHOLD = 50;
 
+/** Default batch size for fetching small pages in fetchFileProactiveIter to limit peak memory. */
+export const SMALL_PAGE_BATCH_SIZE = 10;
+
 /**
  * Fetch file with proactive chunking for large pages.
  * Fetches at depth=1 first to estimate size, then decides per-page whether
@@ -304,6 +307,7 @@ export async function* fetchFileProactiveIter(
   watchPages: string[],
   depth?: number,
   batchSize: number = 5,
+  smallPageBatchSize: number = SMALL_PAGE_BATCH_SIZE,
 ): AsyncGenerator<PageEntry | PageIterMeta, void, undefined> {
   // Step 1: Fetch shallow file to get page-level structure
   const shallowFile = await fetchFile(token, fileKey, 1);
@@ -325,17 +329,20 @@ export async function* fetchFileProactiveIter(
     }
   }
 
-  // Yield small pages (fetched together in a single request)
+  // Yield small pages in batches to limit peak memory
   if (smallPages.length > 0) {
     if (depth === 1) {
       for (const page of smallPages) {
         yield { kind: "page", pageName: page.name || page.id, node: page, chunked: false };
       }
     } else {
-      const smallPageIds = smallPages.map((p) => p.id);
-      const nodes = await fetchNodes(token, fileKey, smallPageIds, depth);
-      for (const [id, node] of Object.entries(nodes)) {
-        yield { kind: "page", pageName: node.name || id, node, chunked: false };
+      for (let i = 0; i < smallPages.length; i += smallPageBatchSize) {
+        const batch = smallPages.slice(i, i + smallPageBatchSize);
+        const batchIds = batch.map((p) => p.id);
+        const nodes = await fetchNodes(token, fileKey, batchIds, depth);
+        for (const [id, node] of Object.entries(nodes)) {
+          yield { kind: "page", pageName: node.name || id, node, chunked: false };
+        }
       }
     }
   }
