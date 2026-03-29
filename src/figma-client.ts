@@ -338,7 +338,7 @@ export async function* fetchFileProactiveIter(
     } else {
       const effectiveSmallPageBatchSize =
         Number.isFinite(smallPageBatchSize) && smallPageBatchSize > 0
-          ? Math.floor(smallPageBatchSize)
+          ? Math.max(1, Math.floor(smallPageBatchSize))
           : 1;
 
       for (let i = 0; i < smallPages.length; i += effectiveSmallPageBatchSize) {
