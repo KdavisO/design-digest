@@ -105,6 +105,11 @@ gh issue list --state open --json number,title,body,labels --limit 100
    gh pr list --state merged --search "merged:>=YYYY-MM-DD" --json number,title,body,labels,mergedAt --limit 100
    ```
    - PR本文に残タスク（未チェックのチェックボックス `- [ ]`）があるものを検出
+   - **テストプランセクションの除外**: 次の条件を満たすセクション見出し（`## ` で始まる行）の配下にあるチェックボックスは検出対象から除外する（手動テストの確認項目であり、マージ後に未チェックのまま残るのは一般的なため）:
+     - 見出しテキスト（`## ` を除いた部分、前後の空白を除去し、大文字小文字を区別しない）が、次のいずれかの正規表現に一致すること:
+       - 英語: `^(test( plan)?|testing)$`（大文字小文字を区別しない、例: `Test plan`, `Test`, `TESTING`）
+       - 日本語: `^テスト(方法|計画)?$`（例: `テスト`, `テスト方法`, `テスト計画`）
+   - 除外の判定方法: PR本文をセクション（`## ` で始まる行）で分割し、各セクション見出しテキストを上記ルールで評価して「テスト関連セクション」に該当する部分の未チェック項目を無視する。テスト関連セクション以外（例: `## 要件`, `## フォローアップ`, `## Summary`）の未チェック項目は引き続き検出対象とする
    - フォローアップが必要と明記されている項目を検出
 
 ### 巡回3: Issue巡回（`issue`）
@@ -126,12 +131,12 @@ gh issue list --state open --json number,title,body,labels --limit 100
 1. **CLAUDE.md とコードの乖離**: `.claude/CLAUDE.md` に記載の技術スタック・重要ファイルが実際のプロジェクト構造と一致しているか確認
 2. **rules/ の整合性**: `.claude/rules/` 配下のルールファイルが実際の運用と乖離していないか確認
 3. **commands/ の網羅性**: `.claude/commands/` 配下のコマンドファイルが、実際のコマンド一覧の管理方法（例: 各ファイル先頭の frontmatter `description`）と整合しているか確認
-4. **SETUP.md の記載漏れ**: 新しく追加されたコマンドやルールが SETUP.md の書き換え箇所一覧に反映されているか確認
+4. **SETUP.md の記載漏れ**: SETUP.md が存在する場合、新しく追加されたコマンドやルールが書き換え箇所一覧に反映されているか確認（SETUP.md はテンプレートセットアップ後に削除される想定のため、存在しない場合はスキップ）
 5. **README等の更新漏れ**: README.md がある場合、記載内容とコードの乖離を確認
 
 ## Agent Teamsモード（`--team`）
 
-> **注意**: Agent Teams は実験的機能です。`.claude/settings.json` の `env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` が `"1"` に設定されている必要があります。
+> **注意**: Agent Teams は実験的機能です。環境変数 `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` が `"1"` に設定されている必要があります（`.claude/settings.json` または `.claude/settings.local.json` の `env` セクションで設定）。
 
 `--team` フラグが指定されている場合、巡回対象ごとにチームメイトを作成して並列分担処理する。
 
@@ -140,9 +145,12 @@ gh issue list --state open --json number,title,body,labels --limit 100
 1. 準備フェーズ（既存オープンIssue一覧の取得）は通常通りリードが実行
 2. 巡回対象に応じて以下のチームメイトを作成:
    - **コード巡回担当**: TODOコメント、非推奨API、セキュリティリスク、パフォーマンス改善点を分析
-   - **PR巡回担当**: オープンPR・最近マージされたPRの残タスク・フォローアップを検出
+   - **PR巡回担当**:
+       - オープンPR・最近マージされたPRの残タスク・フォローアップを検出
+       - テストプランやテスト関連セクション内の「未チェック項目」は除外すること
+       - このテスト関連セクション判定には、通常モードの巡回2で定義した見出し判定ルール（テスト関連セクション判定の正規表現一致ルール）をそのまま適用し、同一の正規表現・判定手順を用いること
    - **Issue巡回担当**: 長期間オープンのIssue、再発兆候の検出
-   - **ドキュメント巡回担当**: CLAUDE.md・rules・commands・SETUP.mdとコードの乖離を検出
+   - **ドキュメント巡回担当**: CLAUDE.md・rules・commands とコードの乖離を検出（SETUP.md が存在する場合はその整合性も確認）
 3. 各チームメイトが独立コンテキストで深く分析し、結果を返す
 4. リードが全チームメイトの結果を統合して「結果の出力フォーマット」に従い出力
 
@@ -156,7 +164,7 @@ gh issue list --state open --json number,title,body,labels --limit 100
 
 以下の場合は `--team` が指定されていても従来の逐次処理を使用:
 
-- `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` が未設定
+- 環境変数 `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` が `"1"` でない（未設定を含む）
 - Agent Teams の作成に失敗した場合
 - 巡回対象が1つのみの場合（例: `/patrol code --team`）— チームメイト作成のオーバーヘッドを避けるため
 
