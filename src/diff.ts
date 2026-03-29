@@ -14,7 +14,7 @@ import {
   escapeSlackLinkText,
 } from "./diff-engine.js";
 import { generatePageSummaries } from "./claude-summary.js";
-import { sendSlackNotification } from "./notify.js";
+import { sendSlackNotification, slackIconFields } from "./notify.js";
 import {
   fetchOpenIssues,
   findExistingGitHubIssue,
@@ -229,6 +229,7 @@ async function main(): Promise<void> {
         await sendSlackNotification(config.slackWebhookUrl, {
           text: "📋 Baseline created — now monitoring",
           blocks: finalBaselineBlocks,
+          ...slackIconFields(config.slackIconUrl, config.slackIconEmoji),
         });
         console.log("Slack notification sent (baseline created).");
       } catch (err) {
@@ -266,6 +267,7 @@ async function main(): Promise<void> {
               },
             },
           ],
+          ...slackIconFields(config.slackIconUrl, config.slackIconEmoji),
         });
         console.log("Slack notification sent (no changes).");
       } catch (err) {
@@ -360,6 +362,7 @@ async function main(): Promise<void> {
     await sendSlackNotification(config.slackWebhookUrl, {
       text: fallbackText,
       blocks,
+      ...slackIconFields(config.slackIconUrl, config.slackIconEmoji),
     });
     console.log("Slack notification sent.");
   } else if (config.dryRun) {
@@ -623,6 +626,7 @@ main().catch(async (err) => {
                 }]
               : []),
           ],
+          ...slackIconFields(process.env.SLACK_ICON_URL, process.env.SLACK_ICON_EMOJI),
         }, controller.signal);
         console.log("Error notification sent to Slack.");
       } finally {

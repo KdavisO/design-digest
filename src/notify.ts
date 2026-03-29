@@ -3,6 +3,15 @@ import type { SlackBlock } from "./diff-engine.js";
 export interface SlackPayload {
   text: string;
   blocks?: SlackBlock[];
+  icon_url?: string;
+  icon_emoji?: string;
+}
+
+export function slackIconFields(iconUrl?: string, iconEmoji?: string): Pick<SlackPayload, "icon_url" | "icon_emoji"> {
+  return {
+    ...(iconUrl && { icon_url: iconUrl }),
+    ...(iconEmoji && { icon_emoji: iconEmoji }),
+  };
 }
 
 export async function sendSlackNotification(

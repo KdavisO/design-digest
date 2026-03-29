@@ -32,7 +32,7 @@ import {
   groupByPage,
 } from "./diff-engine.js";
 import { generatePageSummaries } from "./claude-summary.js";
-import { sendSlackNotification } from "./notify.js";
+import { sendSlackNotification, slackIconFields } from "./notify.js";
 
 interface CliArgs {
   inputPaths: string[];
@@ -132,6 +132,8 @@ async function main(): Promise<void> {
   const snapshotDir = process.env.SNAPSHOT_DIR || "./snapshots";
   const dryRun = process.env.DRY_RUN === "true";
   const slackWebhookUrl = process.env.SLACK_WEBHOOK_URL;
+  const slackIconUrl = process.env.SLACK_ICON_URL;
+  const slackIconEmoji = process.env.SLACK_ICON_EMOJI;
   const anthropicApiKey = process.env.ANTHROPIC_API_KEY;
 
   // Resolve input paths (expand --input-dir)
@@ -217,6 +219,7 @@ async function main(): Promise<void> {
               text: { type: "mrkdwn", text: "MCP-based design check: no changes found." },
             },
           ],
+          ...slackIconFields(slackIconUrl, slackIconEmoji),
         });
         console.log("Slack notification sent (no changes).");
       } catch (err) {
@@ -258,7 +261,7 @@ async function main(): Promise<void> {
       });
     }
     const fallbackText = formatSlackReport(fileKey, changes);
-    await sendSlackNotification(slackWebhookUrl, { text: fallbackText, blocks });
+    await sendSlackNotification(slackWebhookUrl, { text: fallbackText, blocks, ...slackIconFields(slackIconUrl, slackIconEmoji) });
     console.log("Slack notification sent.");
   } else if (dryRun) {
     console.log("\nDry run mode — skipping notifications.");
