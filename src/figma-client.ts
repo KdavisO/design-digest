@@ -433,7 +433,7 @@ export function sanitizeNode<T>(node: T): T {
   if (node === null || typeof node !== "object") return node;
   if (Array.isArray(node)) return node.map(sanitizeNode) as T;
 
-  const result: Record<string, unknown> = {};
+  const result = Object.create(null) as Record<string, unknown>;
   for (const [key, value] of Object.entries(node as Record<string, unknown>)) {
     if (NOISE_KEYS.has(key)) continue;
     result[key] = sanitizeNode(value);
