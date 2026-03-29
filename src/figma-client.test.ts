@@ -11,6 +11,8 @@ import {
   fetchNodesProactive,
   isPayloadTooLargeError,
   fetchFileName,
+  fetchFile,
+  fetchVersions,
 } from "./figma-client.js";
 import type { FigmaNode, FigmaFile, FigmaVersion, PageEntry, PageIterMeta } from "./figma-client.js";
 
@@ -804,5 +806,76 @@ describe("fetchFileName", () => {
     vi.spyOn(globalThis, "fetch").mockRejectedValueOnce(new Error("Network error"));
     const name = await fetchFileName("token", "abc123");
     expect(name).toBeUndefined();
+  });
+});
+
+describe("API response schema validation", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("rejects fetchFile response missing required fields", async () => {
+    // Missing 'document' field
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(JSON.stringify({ name: "Test", lastModified: "2024-01-01" }), { status: 200 }),
+    );
+
+    await expect(fetchFile("token", "fileKey")).rejects.toThrow(
+      /response validation failed/,
+    );
+  });
+
+  it("rejects fetchFile response with wrong document type", async () => {
+    // document.id is missing
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          name: "Test",
+          lastModified: "2024-01-01",
+          version: "1",
+          document: { name: "Doc", type: "DOCUMENT" },
+        }),
+        { status: 200 },
+      ),
+    );
+
+    await expect(fetchFile("token", "fileKey")).rejects.toThrow(
+      /response validation failed/,
+    );
+  });
+
+  it("accepts valid fetchFile response with extra properties", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          name: "Test",
+          lastModified: "2024-01-01",
+          version: "1",
+          document: { id: "0:0", name: "Doc", type: "DOCUMENT" },
+          thumbnailUrl: "https://example.com/thumb.png",
+          editorType: "figma",
+        }),
+        { status: 200 },
+      ),
+    );
+
+    const file = await fetchFile("token", "fileKey");
+    expect(file.name).toBe("Test");
+  });
+
+  it("rejects fetchVersions response with invalid version structure", async () => {
+    // versions[0] missing 'user' field
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          versions: [{ id: "v1", created_at: "2024-01-01", label: "", description: "" }],
+        }),
+        { status: 200 },
+      ),
+    );
+
+    await expect(fetchVersions("token", "fileKey")).rejects.toThrow(
+      /response validation failed/,
+    );
   });
 });

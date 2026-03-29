@@ -1,3 +1,10 @@
+import type { ZodType } from "zod";
+import {
+  figmaFileSchema,
+  figmaNodesResponseSchema,
+  figmaVersionsResponseSchema,
+} from "./figma-schemas.js";
+
 export interface FigmaNode {
   id: string;
   name: string;
@@ -54,7 +61,7 @@ export async function fetchFile(
 ): Promise<FigmaFile> {
   let url = `${FIGMA_API_BASE}/files/${fileKey}`;
   if (depth !== undefined) url += `?depth=${depth}`;
-  return figmaRequest(url, token);
+  return figmaRequest(url, token, figmaFileSchema);
 }
 
 /**
@@ -82,9 +89,10 @@ export async function fetchNodes(
   const ids = nodeIds.join(",");
   let url = `${FIGMA_API_BASE}/files/${fileKey}/nodes?ids=${encodeURIComponent(ids)}`;
   if (depth !== undefined) url += `&depth=${depth}`;
-  const resp = await figmaRequest<{ nodes: Record<string, { document: FigmaNode }> }>(
+  const resp = await figmaRequest(
     url,
     token,
+    figmaNodesResponseSchema,
   );
   const result: Record<string, FigmaNode> = {};
   for (const [id, node] of Object.entries(resp.nodes)) {
@@ -477,7 +485,7 @@ export async function fetchVersions(
   fileKey: string,
 ): Promise<FigmaVersion[]> {
   const url = `${FIGMA_API_BASE}/files/${fileKey}/versions`;
-  const resp = await figmaRequest<FigmaVersionsResponse>(url, token);
+  const resp = await figmaRequest(url, token, figmaVersionsResponseSchema);
   return resp.versions;
 }
 
@@ -549,7 +557,7 @@ export function isPayloadTooLargeError(err: unknown): boolean {
   );
 }
 
-async function figmaRequest<T>(url: string, token: string): Promise<T> {
+async function figmaRequest<T>(url: string, token: string, schema?: ZodType<T>): Promise<T> {
   const maxRetries = 3;
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
@@ -577,7 +585,20 @@ async function figmaRequest<T>(url: string, token: string): Promise<T> {
       );
     }
 
-    return (await response.json()) as T;
+    const json: unknown = await response.json();
+
+    if (schema) {
+      const result = schema.safeParse(json);
+      if (!result.success) {
+        const endpoint = url.replace(FIGMA_API_BASE, "");
+        throw new Error(
+          `Figma API response validation failed for ${endpoint}: ${result.error.message}`,
+        );
+      }
+      return result.data;
+    }
+
+    return json as T;
   }
 
   throw new Error("Unreachable");
