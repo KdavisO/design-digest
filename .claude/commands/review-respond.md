@@ -94,7 +94,7 @@ PRのレビューコメントを取得し、対応してください。
 
 ## Agent Teamsモード（`--team`）
 
-> **注意**: Agent Teams は実験的機能です。`.claude/settings.json` の `env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` が `"1"` に設定されている必要があります。
+> **注意**: Agent Teams は実験的機能です。環境変数 `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` が `"1"` に設定されている必要があります（`.claude/settings.json` または `.claude/settings.local.json` の `env` セクションで設定）。
 
 `--team` フラグが指定されている場合、手順1で取得した**統合後の未対応コメント**（ラインコメントおよびレビュー本文由来の項目を含む）の件数が**5件以上**であれば Agent Teams で観点別に分担処理する。5件未満の場合は従来の逐次処理にフォールバックする。
 
@@ -114,7 +114,7 @@ PRのレビューコメントを取得し、対応してください。
 以下の場合は `--team` が指定されていても従来の逐次処理を使用:
 
 - 未対応コメントが5件未満
-- `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` が未設定
+- 環境変数 `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` が `"1"` でない（未設定を含む）
 - Agent Teams の作成に失敗した場合
 
 ### `--auto` との併用
@@ -351,7 +351,7 @@ Copilotに再レビューをリクエストし、成功を確認する:
    - 上記 1 → 2 を繰り返す
    - 3回リトライ（合計4回試行）しても確認できない場合: 「⚠ Copilotレビューリクエストの確認に失敗しました」と警告を出力する
 
-**ポーリング再開**（`--auto` モード時）: Copilot再レビューリクエストの**成功が確認できた場合のみ**、`CronCreate` で新しいポーリングタスクを作成（cron: `*/5 * * * *`, prompt: `/review-respond --auto --max-idle 3 {PR番号}`, recurring: true）。`--team` フラグが指定されている場合は prompt を `/review-respond --auto --team --max-idle 3 {PR番号}` とする。新しいタスクIDをcronタスクIDファイル（`/tmp/{project}-review-{ownerRepo}-cron-{PR番号}`）に上書きし、idleカウンターファイルを0にリセットする。※ 再開後の `--max-idle` は常に3に固定される（初回実行時に異なる値が指定されていても引き継がれない）。リクエストが失敗した場合はポーリングを再開せず、警告を出力し、この後の自動ポーリング再開処理のみスキップする（手順7以降は通常どおり実行する）。
+**ポーリング再開**（`--auto` モード時）: Copilot再レビューリクエストの**成功が確認できた場合のみ**、`CronCreate` で新しいポーリングタスクを作成（cron: `*/3 * * * *`, prompt: `/review-respond --auto --max-idle 3 {PR番号}`, recurring: true）。`--team` フラグが指定されている場合は prompt を `/review-respond --auto --team --max-idle 3 {PR番号}` とする。新しいタスクIDをcronタスクIDファイル（`/tmp/{project}-review-{ownerRepo}-cron-{PR番号}`）に上書きし、idleカウンターファイルを0にリセットする。※ 再開後の `--max-idle` は常に3に固定される（初回実行時に異なる値が指定されていても引き継がれない）。リクエストが失敗した場合はポーリングを再開せず、警告を出力し、この後の自動ポーリング再開処理のみスキップする（手順7以降は通常どおり実行する）。
 
 ### 7. レビューコメントへの返信
 
