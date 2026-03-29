@@ -1,11 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { FigmaRestAdapter } from "./figma-rest-adapter.js";
+import type { FigmaNode } from "../figma-client.js";
+import type { PageEntry, PageIterMeta } from "../figma-client.js";
 
 // Mock the figma-client module (keep isPayloadTooLargeError as real implementation)
 vi.mock("../figma-client.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../figma-client.js")>();
   return {
     fetchFileProactive: vi.fn(),
+    fetchFileProactiveIter: vi.fn(),
     fetchNodesProactive: vi.fn(),
     fetchNodesChunked: vi.fn(),
     fetchFile: vi.fn(),
@@ -13,13 +16,13 @@ vi.mock("../figma-client.js", async (importOriginal) => {
     checkVersionChanged: vi.fn(),
     extractEditorsSince: vi.fn(),
     filterWatchTargets: vi.fn(),
-    sanitizeNode: vi.fn((node: unknown) => node),
+    sanitizeNode: actual.sanitizeNode,
     isPayloadTooLargeError: actual.isPayloadTooLargeError,
   };
 });
 
 import {
-  fetchFileProactive,
+  fetchFileProactiveIter,
   fetchNodesProactive,
   fetchNodesChunked,
   fetchFile,
@@ -29,7 +32,7 @@ import {
   filterWatchTargets,
 } from "../figma-client.js";
 
-const mockFetchFileProactive = vi.mocked(fetchFileProactive);
+const mockFetchFileProactiveIter = vi.mocked(fetchFileProactiveIter);
 const mockFetchNodesProactive = vi.mocked(fetchNodesProactive);
 const mockFetchNodesChunked = vi.mocked(fetchNodesChunked);
 const mockFetchFile = vi.mocked(fetchFile);
@@ -37,6 +40,16 @@ const mockFetchVersions = vi.mocked(fetchVersions);
 const mockCheckVersionChanged = vi.mocked(checkVersionChanged);
 const mockExtractEditorsSince = vi.mocked(extractEditorsSince);
 const mockFilterWatchTargets = vi.mocked(filterWatchTargets);
+
+/** Helper: create a mock async generator from metadata + page entries */
+function mockIter(meta: PageIterMeta, entries: PageEntry[]) {
+  return async function* () {
+    yield meta;
+    for (const entry of entries) {
+      yield entry;
+    }
+  };
+}
 
 describe("FigmaRestAdapter", () => {
   beforeEach(() => {
@@ -48,21 +61,21 @@ describe("FigmaRestAdapter", () => {
     expect(adapter.name).toBe("REST API");
   });
 
-  it("should use fetchFileProactive for page-based fetching", async () => {
-    mockFetchFileProactive.mockResolvedValue({
-      pages: {
-        "Page 1": { id: "1:1", name: "Page 1", type: "CANVAS" },
-      },
-      chunkedPages: [],
-      targetPageIds: ["1:1"],
-    });
+  it("should use fetchFileProactiveIter for page-based fetching", async () => {
+    const page: FigmaNode = { id: "1:1", name: "Page 1", type: "CANVAS" };
+    mockFetchFileProactiveIter.mockReturnValue(
+      mockIter(
+        { kind: "meta", fileName: "Test File", targetPageIds: ["1:1"] },
+        [{ kind: "page", pageName: "Page 1", node: page, chunked: false }],
+      )() as ReturnType<typeof fetchFileProactiveIter>,
+    );
 
     const adapter = new FigmaRestAdapter("test-token");
     const pages = await adapter.fetchPages("file-key", {
       watchPages: ["Page 1"],
     });
 
-    expect(mockFetchFileProactive).toHaveBeenCalledWith(
+    expect(mockFetchFileProactiveIter).toHaveBeenCalledWith(
       "test-token",
       "file-key",
       ["Page 1"],
@@ -96,11 +109,12 @@ describe("FigmaRestAdapter", () => {
   });
 
   it("should pass depth and batchSize options", async () => {
-    mockFetchFileProactive.mockResolvedValue({
-      pages: {},
-      chunkedPages: [],
-      targetPageIds: [],
-    });
+    mockFetchFileProactiveIter.mockReturnValue(
+      mockIter(
+        { kind: "meta", fileName: "Test File", targetPageIds: [] },
+        [],
+      )() as ReturnType<typeof fetchFileProactiveIter>,
+    );
 
     const adapter = new FigmaRestAdapter("test-token");
     await adapter.fetchPages("file-key", {
@@ -108,7 +122,7 @@ describe("FigmaRestAdapter", () => {
       batchSize: 10,
     });
 
-    expect(mockFetchFileProactive).toHaveBeenCalledWith(
+    expect(mockFetchFileProactiveIter).toHaveBeenCalledWith(
       "test-token",
       "file-key",
       [],
@@ -118,7 +132,11 @@ describe("FigmaRestAdapter", () => {
   });
 
   it("should fall back to chunked fetch on payload-too-large error (page-based)", async () => {
-    mockFetchFileProactive.mockRejectedValue(new Error("Request too large"));
+    mockFetchFileProactiveIter.mockReturnValue(
+      (async function* () {
+        throw new Error("Request too large");
+      })() as ReturnType<typeof fetchFileProactiveIter>,
+    );
     mockFetchFile.mockResolvedValue({
       name: "Test",
       lastModified: "",
@@ -140,7 +158,7 @@ describe("FigmaRestAdapter", () => {
     const adapter = new FigmaRestAdapter("test-token");
     const pages = await adapter.fetchPages("file-key");
 
-    expect(mockFetchFileProactive).toHaveBeenCalled();
+    expect(mockFetchFileProactiveIter).toHaveBeenCalled();
     expect(mockFetchFile).toHaveBeenCalledWith("test-token", "file-key", 1);
     expect(mockFetchNodesChunked).toHaveBeenCalled();
     expect(Object.keys(pages)).toEqual(["Page 1"]);
@@ -163,7 +181,11 @@ describe("FigmaRestAdapter", () => {
   });
 
   it("should re-throw non-payload errors", async () => {
-    mockFetchFileProactive.mockRejectedValue(new Error("Network error"));
+    mockFetchFileProactiveIter.mockReturnValue(
+      (async function* () {
+        throw new Error("Network error");
+      })() as ReturnType<typeof fetchFileProactiveIter>,
+    );
 
     const adapter = new FigmaRestAdapter("test-token");
     await expect(adapter.fetchPages("file-key")).rejects.toThrow("Network error");
@@ -259,5 +281,27 @@ describe("FigmaRestAdapter", () => {
 
     expect(mockExtractEditorsSince).toHaveBeenCalledWith(versions, "2026-01-01");
     expect(result).toEqual(editors);
+  });
+
+  it("should sanitize each page individually via the iterator", async () => {
+    const page: FigmaNode = {
+      id: "1:1",
+      name: "Page 1",
+      type: "CANVAS",
+      absoluteBoundingBox: { x: 0, y: 0, width: 100, height: 100 } as unknown,
+    };
+    mockFetchFileProactiveIter.mockReturnValue(
+      mockIter(
+        { kind: "meta", fileName: "Test File", targetPageIds: ["1:1"] },
+        [{ kind: "page", pageName: "Page 1", node: page, chunked: false }],
+      )() as ReturnType<typeof fetchFileProactiveIter>,
+    );
+
+    const adapter = new FigmaRestAdapter("test-token");
+    const pages = await adapter.fetchPages("file-key");
+
+    // sanitizeNode should have stripped the noise key
+    expect(pages["Page 1"]).not.toHaveProperty("absoluteBoundingBox");
+    expect(pages["Page 1"]).toHaveProperty("name", "Page 1");
   });
 });

@@ -1,6 +1,6 @@
 import type { FigmaNode, FigmaVersion, FigmaUser } from "../figma-client.js";
 import {
-  fetchFileProactive,
+  fetchFileProactiveIter,
   fetchNodesProactive,
   fetchNodesChunked,
   fetchFile,
@@ -11,7 +11,7 @@ import {
   isPayloadTooLargeError,
 } from "../figma-client.js";
 import type { FigmaDataAdapter, FetchPagesOptions } from "./figma-data-adapter.js";
-import { sanitizeRecord, sanitizeRecordByName } from "./sanitize-helpers.js";
+import { sanitizeNode, sanitizeRecord, sanitizeRecordByName } from "./sanitize-helpers.js";
 
 const DEFAULT_BATCH_SIZE = 5;
 
@@ -149,15 +149,32 @@ export class FigmaRestAdapter implements FigmaDataAdapter {
     batchSize: number,
   ): Promise<Record<string, FigmaNode>> {
     try {
-      const { pages: fetchedPages, fileName } = await fetchFileProactive(
+      // Use the async generator to process pages one at a time as they are yielded,
+      // sanitizing each page before storing it.
+      // This keeps peak memory roughly proportional to the largest single page,
+      // since large pages are fetched individually (small pages are batched).
+      const iter = fetchFileProactiveIter(
         this.token,
         fileKey,
         watchPages,
         depth,
         batchSize,
       );
-      this.lastFileName = fileName;
-      return sanitizeRecord(fetchedPages);
+
+      // First yield is metadata — validate via discriminant
+      const metaResult = await iter.next();
+      if (metaResult.done || !metaResult.value || metaResult.value.kind !== "meta") {
+        throw new Error("Expected initial metadata from fetchFileProactiveIter");
+      }
+      this.lastFileName = metaResult.value.fileName;
+
+      const pages: Record<string, FigmaNode> = Object.create(null);
+      for await (const entry of iter) {
+        if (entry.kind !== "page") continue;
+        pages[entry.pageName] = sanitizeNode(entry.node);
+      }
+
+      return pages;
     } catch (err) {
       if (isPayloadTooLargeError(err)) {
         console.log("  Payload too large — fetching page list and chunking...");
