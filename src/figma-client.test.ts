@@ -71,6 +71,55 @@ describe("sanitizeNode", () => {
     expect(result[1]).not.toHaveProperty("absoluteRenderBounds");
   });
 
+  it("returns null-prototype objects to prevent prototype pollution", () => {
+    // Use JSON.parse to create a node with "__proto__" as a real own property,
+    // since object literal `__proto__:` is special-cased in JS and may not
+    // appear in Object.entries.
+    const node = JSON.parse(`{
+      "id": "1",
+      "name": "Frame",
+      "type": "FRAME",
+      "__proto__": { "polluted": true },
+      "children": [
+        {
+          "id": "2",
+          "name": "Child",
+          "type": "TEXT",
+          "constructor": { "polluted": true }
+        }
+      ]
+    }`);
+    const result = sanitizeNode(node);
+
+    // All returned objects should be null-prototype
+    expect(Object.getPrototypeOf(result)).toBeNull();
+    const child = (result as Record<string, unknown>).children as unknown[];
+    expect(Object.getPrototypeOf(child[0])).toBeNull();
+
+    // __proto__ key is preserved as a data property on null-prototype object
+    expect(Object.prototype.hasOwnProperty.call(result, "__proto__")).toBe(true);
+
+    // Prototype pollution should not occur
+    const plain = {};
+    expect((plain as Record<string, unknown>).polluted).toBeUndefined();
+  });
+
+  it("handles __proto__ key in Figma payload without pollution", () => {
+    // Simulate a Figma node that has "__proto__" as an actual data key
+    const malicious = Object.create(null) as Record<string, unknown>;
+    malicious["id"] = "1";
+    malicious["name"] = "Malicious";
+    malicious["type"] = "FRAME";
+    malicious["__proto__"] = { injected: true };
+
+    const result = sanitizeNode(malicious);
+    expect(Object.getPrototypeOf(result)).toBeNull();
+    // The __proto__ key is stored as a plain data property, not as a prototype link
+    expect((result as Record<string, unknown>)["__proto__"]).toEqual({ injected: true });
+    // No pollution on Object.prototype
+    expect(({} as Record<string, unknown>).injected).toBeUndefined();
+  });
+
   it("handles null and primitives", () => {
     expect(sanitizeNode(null)).toBeNull();
     expect(sanitizeNode(42)).toBe(42);
