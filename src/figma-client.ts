@@ -238,7 +238,8 @@ export async function fetchFileProactive(
         );
         chunkedPages.push(page.name);
 
-        const precomputedShallow: Record<string, FigmaNode> = { [page.id]: page };
+        const precomputedShallow = Object.create(null) as Record<string, FigmaNode>;
+        precomputedShallow[page.id] = page;
         const chunkedNodes = await fetchNodesChunked(
           token,
           fileKey,
@@ -337,7 +338,8 @@ export async function* fetchFileProactiveIter(
       console.log(
         `  Proactive chunked fetch: ${page.name} (${childCount} children, batch size ${effectiveBatch})`,
       );
-      const precomputedShallow: Record<string, FigmaNode> = { [page.id]: page };
+      const precomputedShallow = Object.create(null) as Record<string, FigmaNode>;
+      precomputedShallow[page.id] = page;
       const chunkedNodes = await fetchNodesChunked(
         token,
         fileKey,
@@ -427,7 +429,7 @@ export async function fetchNodesProactive(
       }
 
       // Build precomputed shallow map to avoid redundant depth=1 fetch
-      const precomputedShallow: Record<string, FigmaNode> = {};
+      const precomputedShallow = Object.create(null) as Record<string, FigmaNode>;
       for (const nodeId of largeNodeIds) {
         if (shallowNodes[nodeId]) precomputedShallow[nodeId] = shallowNodes[nodeId];
       }
