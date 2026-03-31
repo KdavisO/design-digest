@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtemp, rm, writeFile, mkdir, truncate } from "node:fs/promises";
+import { mkdtemp, rm, writeFile, mkdir, truncate, readdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -145,6 +145,71 @@ describe("snapshot page file migration", () => {
     expect(loaded!.pages["Page A"]).toEqual(pages["Page A"]);
     expect(loaded!.pages["page a"]).toEqual(pages["page a"]);
     expect(loaded!.versionId).toBe("v1");
+  });
+});
+
+describe("atomic write (no leftover .tmp files)", () => {
+  let tmpDir: string;
+  const fileKey = "testFile123";
+
+  beforeEach(async () => {
+    tmpDir = await mkdtemp(join(tmpdir(), "snapshot-atomic-test-"));
+  });
+
+  afterEach(async () => {
+    await rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it("savePage leaves no .tmp files after successful write", async () => {
+    const node = makePageNode("0:1", "Page A");
+    await savePage(tmpDir, fileKey, "Page A", node);
+
+    const pagesDir = join(tmpDir, fileKey, "pages");
+    const files = await readdir(pagesDir);
+    const tmpFiles = files.filter((f) => f.endsWith(".tmp"));
+    expect(tmpFiles).toEqual([]);
+
+    // Verify the page was written correctly
+    const loaded = await loadPage(tmpDir, fileKey, "Page A");
+    expect(loaded).toEqual(node);
+  });
+
+  it("saveSnapshotMeta leaves no .tmp files after successful write", async () => {
+    await saveSnapshotMeta(tmpDir, fileKey, {
+      timestamp: "2026-01-01T00:00:00Z",
+      pageNames: ["Page A"],
+    });
+
+    const dir = join(tmpDir, fileKey);
+    const files = await readdir(dir);
+    const tmpFiles = files.filter((f) => f.endsWith(".tmp"));
+    expect(tmpFiles).toEqual([]);
+
+    // Verify meta was written correctly
+    const meta = await loadSnapshotMeta(tmpDir, fileKey);
+    expect(meta).not.toBeNull();
+    expect(meta!.pageNames).toEqual(["Page A"]);
+  });
+
+  it("saveSnapshot round-trip leaves no .tmp files", async () => {
+    const pages: Record<string, FigmaNode> = {
+      "Page A": makePageNode("0:1", "Page A"),
+      "Page B": makePageNode("0:2", "Page B"),
+    };
+    await saveSnapshot(tmpDir, fileKey, pages, "v1");
+
+    // Check no .tmp files in fileKey dir or pages subdir
+    const dirFiles = await readdir(join(tmpDir, fileKey));
+    expect(dirFiles.filter((f) => f.endsWith(".tmp"))).toEqual([]);
+
+    const pagesDir = join(tmpDir, fileKey, "pages");
+    const pageFiles = await readdir(pagesDir);
+    expect(pageFiles.filter((f) => f.endsWith(".tmp"))).toEqual([]);
+
+    // Verify round-trip
+    const loaded = await loadSnapshot(tmpDir, fileKey);
+    expect(loaded).not.toBeNull();
+    expect(Object.keys(loaded!.pages)).toEqual(["Page A", "Page B"]);
   });
 });
 
