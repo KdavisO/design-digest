@@ -1,7 +1,7 @@
 import "dotenv/config";
 import { loadConfig } from "./config.js";
 import { FigmaRestAdapter } from "./adapters/figma-rest-adapter.js";
-import type { FigmaUser } from "./figma-client.js";
+import type { FigmaUser, FigmaNode } from "./figma-client.js";
 import {
   loadSnapshot,
   loadSnapshotMeta,
@@ -161,14 +161,14 @@ async function processFile(
     if (hasPrevious) {
       // Skip diff for pages whose snapshot file is missing to avoid false-positive "added"
       if (!missingPages.has(pageName)) {
-        let previousPage;
+        let previousPage: FigmaNode | null = null;
         if (isLegacyFormat) {
           previousPage = previous!.pages[pageName] ?? null;
         } else if (previousMeta) {
           previousPage = await loadPage(config.snapshotDir, fileKey, pageName);
         }
 
-        const pageChanges = detectPageChanges(pageName, previousPage ?? null, node);
+        const pageChanges = detectPageChanges(pageName, previousPage, node);
         for (const c of pageChanges) changes.push(c);
       }
     }
@@ -186,13 +186,13 @@ async function processFile(
       // Load the deleted page to get its metadata for the change entry
       // Note: if the page file is missing (in missingPages), loadPage returns null
       // and detectPageChanges(name, null, null) safely returns [] — no special handling needed.
-      let deletedPage;
+      let deletedPage: FigmaNode | null = null;
       if (isLegacyFormat) {
-        deletedPage = previous!.pages[prevPageName];
+        deletedPage = previous!.pages[prevPageName] ?? null;
       } else if (previousMeta) {
         deletedPage = await loadPage(config.snapshotDir, fileKey, prevPageName);
       }
-      const pageChanges = detectPageChanges(prevPageName, deletedPage ?? null, null);
+      const pageChanges = detectPageChanges(prevPageName, deletedPage, null);
       for (const c of pageChanges) changes.push(c);
       // Remove stale page snapshot file
       await removePageSnapshot(config.snapshotDir, fileKey, prevPageName);
