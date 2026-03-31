@@ -301,13 +301,25 @@ export async function saveSnapshotMeta(
 }
 
 /**
+ * Write a chunk to the stream, waiting for drain if backpressure is signalled.
+ */
+function writeChunk(ws: NodeJS.WritableStream, chunk: string): boolean | Promise<void> {
+  const ok = ws.write(chunk);
+  if (ok) return true;
+  return new Promise<void>((resolve) => {
+    ws.once("drain", resolve);
+  });
+}
+
+/**
  * Iteratively write a value as JSON to a writable stream.
  * Uses an explicit stack instead of recursion to handle deeply nested Figma nodes.
+ * Respects backpressure: when `write()` returns false, waits for `drain` before continuing.
  *
  * Each "action" on the stack describes what to write next. Actions are processed
  * in LIFO order, so we push them in reverse.
  */
-function streamJsonValue(ws: NodeJS.WritableStream, root: unknown): void {
+async function streamJsonValue(ws: NodeJS.WritableStream, root: unknown): Promise<void> {
   type Action =
     | { kind: "value"; value: unknown; indent: number }
     | { kind: "raw"; text: string };
@@ -318,25 +330,29 @@ function streamJsonValue(ws: NodeJS.WritableStream, root: unknown): void {
     const action = actions.pop()!;
 
     if (action.kind === "raw") {
-      ws.write(action.text);
+      const result = writeChunk(ws, action.text);
+      if (result !== true) await result;
       continue;
     }
 
     const { value, indent } = action;
 
     if (value === null || value === undefined) {
-      ws.write("null");
+      const result = writeChunk(ws, "null");
+      if (result !== true) await result;
       continue;
     }
     // Skip undefined object properties (match JSON.stringify behavior)
     // undefined in arrays is handled as null above via the null check
     if (typeof value !== "object") {
-      ws.write(JSON.stringify(value));
+      const result = writeChunk(ws, JSON.stringify(value));
+      if (result !== true) await result;
       continue;
     }
     if (Array.isArray(value)) {
       if (value.length === 0) {
-        ws.write("[]");
+        const result = writeChunk(ws, "[]");
+        if (result !== true) await result;
         continue;
       }
       // Push closing bracket, then items in reverse
@@ -354,7 +370,8 @@ function streamJsonValue(ws: NodeJS.WritableStream, root: unknown): void {
     const obj = value as Record<string, unknown>;
     const keys = Object.keys(obj).filter((k) => obj[k] !== undefined);
     if (keys.length === 0) {
-      ws.write("{}");
+      const result = writeChunk(ws, "{}");
+      if (result !== true) await result;
       continue;
     }
     actions.push({ kind: "raw", text: " ".repeat(indent) + "}" });
@@ -370,14 +387,24 @@ function streamJsonValue(ws: NodeJS.WritableStream, root: unknown): void {
 
 /**
  * Write a FigmaNode to a file using streaming to avoid V8 string length limits.
+ * Respects backpressure and destroys the stream on error.
  */
 function writeNodeStream(filePath: string, node: FigmaNode): Promise<void> {
   return new Promise((resolve, reject) => {
     const ws = createWriteStream(filePath, { encoding: "utf-8" });
-    ws.on("error", reject);
-    streamJsonValue(ws, node);
-    ws.write("\n");
-    ws.end(() => resolve());
+    ws.on("error", (err) => {
+      ws.destroy();
+      reject(err);
+    });
+    streamJsonValue(ws, node)
+      .then(() => {
+        ws.write("\n");
+        ws.end(() => resolve());
+      })
+      .catch((err) => {
+        ws.destroy();
+        reject(err);
+      });
   });
 }
 
