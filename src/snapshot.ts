@@ -4,6 +4,17 @@ import { join } from "node:path";
 import { createHash } from "node:crypto";
 import type { FigmaNode } from "./figma-client.js";
 
+/**
+ * Write data to a file atomically by writing to a temporary file first,
+ * then renaming it to the target path. This prevents partial/corrupt files
+ * if the process crashes mid-write.
+ */
+async function writeFileAtomic(filePath: string, data: string): Promise<void> {
+  const tmpPath = `${filePath}.tmp`;
+  await writeFile(tmpPath, data);
+  await rename(tmpPath, filePath);
+}
+
 /** Maximum legacy snapshot file size in bytes (500 MiB). Files exceeding this are renamed aside to prevent OOM. */
 export const LEGACY_SNAPSHOT_MAX_BYTES = 500 * 1024 * 1024;
 
@@ -286,7 +297,7 @@ export async function saveSnapshotMeta(
     await mkdir(dirPath, { recursive: true });
   }
   const data: SnapshotMeta = { ...meta, fileKey };
-  await writeFile(metaPath(dir, fileKey), JSON.stringify(data, null, 2));
+  await writeFileAtomic(metaPath(dir, fileKey), JSON.stringify(data, null, 2));
 }
 
 /**
@@ -371,6 +382,15 @@ function writeNodeStream(filePath: string, node: FigmaNode): Promise<void> {
 }
 
 /**
+ * Atomic variant of writeNodeStream: writes to a temp file then renames.
+ */
+async function writeNodeStreamAtomic(filePath: string, node: FigmaNode): Promise<void> {
+  const tmpPath = `${filePath}.tmp`;
+  await writeNodeStream(tmpPath, node);
+  await rename(tmpPath, filePath);
+}
+
+/**
  * Save a single page to its own file.
  * Cleans up legacy encodeURIComponent-based file if it exists.
  */
@@ -386,11 +406,11 @@ export async function savePage(
   }
   const filePath = pageFilePath(dir, fileKey, pageName);
   try {
-    await writeFile(filePath, JSON.stringify(node, null, 2));
+    await writeFileAtomic(filePath, JSON.stringify(node, null, 2));
   } catch (err) {
     if (err instanceof RangeError) {
       // Covers both "Invalid string length" and "Maximum call stack size exceeded"
-      await writeNodeStream(filePath, node);
+      await writeNodeStreamAtomic(filePath, node);
     } else {
       throw err;
     }
