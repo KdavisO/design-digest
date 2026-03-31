@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { mkdtemp, rm, writeFile, mkdir, truncate, readdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
@@ -483,39 +483,29 @@ describe("streaming backpressure handling", () => {
     await rm(tmpDir, { recursive: true, force: true });
   });
 
-  it("savePage handles backpressure when write() returns false", async () => {
-    // Create a large node that will trigger the streaming path via RangeError fallback
-    // Instead, we test via savePage with a node large enough to exercise multiple writes
-    const largeChildren: FigmaNode[] = [];
-    for (let i = 0; i < 100; i++) {
-      largeChildren.push({
-        id: `child-${i}`,
-        name: `Child ${i}`,
-        type: "FRAME",
-        children: [],
-      });
+  it("savePage falls back to streaming when JSON.stringify throws RangeError", async () => {
+    const node: FigmaNode = { id: "0:1", name: "StreamTest", type: "FRAME", children: [] };
+
+    // Stub JSON.stringify to throw RangeError for this specific node,
+    // forcing savePage into the writeNodeStreamAtomic fallback path.
+    const originalStringify = JSON.stringify;
+    const spy = vi.spyOn(JSON, "stringify").mockImplementation(
+      ((value: unknown, ...rest: unknown[]) => {
+        const maybeNode = value as { id?: string; name?: string } | null | undefined;
+        if (maybeNode && maybeNode.id === "0:1" && maybeNode.name === "StreamTest") {
+          throw new RangeError("Maximum call stack size exceeded");
+        }
+        return (originalStringify as (...args: unknown[]) => string)(value, ...rest);
+      }) as typeof JSON.stringify,
+    );
+
+    try {
+      await savePage(tmpDir, fileKey, "Stream Page", node);
+    } finally {
+      spy.mockRestore();
     }
-    const node: FigmaNode = {
-      id: "0:1",
-      name: "Large Page",
-      type: "CANVAS",
-      children: largeChildren,
-    };
 
-    await savePage(tmpDir, fileKey, "Large Page", node);
-
-    const loaded = await loadPage(tmpDir, fileKey, "Large Page");
-    expect(loaded).toEqual(node);
-  });
-
-  it("savePage produces correct JSON via streaming path for deeply nested node", async () => {
-    // Build a deeply nested node to trigger RangeError in JSON.stringify
-    // and fall back to writeNodeStreamAtomic
-    const node: FigmaNode = { id: "0:1", name: "Deep", type: "FRAME", children: [] };
-
-    // Save and verify round-trip
-    await savePage(tmpDir, fileKey, "Deep Page", node);
-    const loaded = await loadPage(tmpDir, fileKey, "Deep Page");
+    const loaded = await loadPage(tmpDir, fileKey, "Stream Page");
     expect(loaded).toEqual(node);
   });
 
