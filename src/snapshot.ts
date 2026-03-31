@@ -167,6 +167,8 @@ function streamJsonValue(ws: NodeJS.WritableStream, root: unknown): void {
       ws.write("null");
       continue;
     }
+    // Skip undefined object properties (match JSON.stringify behavior)
+    // undefined in arrays is handled as null above via the null check
     if (typeof value !== "object") {
       ws.write(JSON.stringify(value));
       continue;
@@ -187,8 +189,9 @@ function streamJsonValue(ws: NodeJS.WritableStream, root: unknown): void {
       actions.push({ kind: "raw", text: "[\n" });
       continue;
     }
-    // Object
-    const keys = Object.keys(value as Record<string, unknown>);
+    // Object — skip undefined properties to match JSON.stringify behavior
+    const obj = value as Record<string, unknown>;
+    const keys = Object.keys(obj).filter((k) => obj[k] !== undefined);
     if (keys.length === 0) {
       ws.write("{}");
       continue;
@@ -197,7 +200,7 @@ function streamJsonValue(ws: NodeJS.WritableStream, root: unknown): void {
     for (let i = keys.length - 1; i >= 0; i--) {
       const suffix = i < keys.length - 1 ? ",\n" : "\n";
       actions.push({ kind: "raw", text: suffix });
-      actions.push({ kind: "value", value: (value as Record<string, unknown>)[keys[i]], indent: indent + 2 });
+      actions.push({ kind: "value", value: obj[keys[i]], indent: indent + 2 });
       actions.push({ kind: "raw", text: " ".repeat(indent + 2) + JSON.stringify(keys[i]) + ": " });
     }
     actions.push({ kind: "raw", text: "{\n" });
@@ -243,6 +246,17 @@ export async function savePage(
 }
 
 /**
+ * Remove a single page snapshot file.
+ */
+export async function removePageSnapshot(
+  dir: string,
+  fileKey: string,
+  pageName: string,
+): Promise<void> {
+  await rm(pageFilePath(dir, fileKey, pageName), { force: true });
+}
+
+/**
  * Remove legacy single-file snapshot after migration to per-page format.
  */
 export async function removeLegacySnapshot(
@@ -250,9 +264,7 @@ export async function removeLegacySnapshot(
   fileKey: string,
 ): Promise<void> {
   const path = legacySnapshotPath(dir, fileKey);
-  if (existsSync(path)) {
-    await rm(path);
-  }
+  await rm(path, { force: true });
 }
 
 /**

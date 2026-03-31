@@ -159,7 +159,7 @@ export function detectPageChanges(
     }
   }
 
-  // Pass 2: Detect renames for nodes with changed IDs (same type + same parent structure)
+  // Pass 2: Detect renames for nodes with changed IDs (same type + same name)
   const unmatchedOld = Object.entries(oldNodes).filter(([id]) => !matchedOldIds.has(id));
   const unmatchedNew = Object.entries(newNodes).filter(([id]) => !matchedNewIds.has(id));
 
@@ -178,9 +178,13 @@ export function detectPageChanges(
 
       const diffs = diff(oldNode, newNode);
       if (diffs) {
+        const isInstance = newNode.type === "INSTANCE";
+
         for (const d of diffs) {
           const property = diffPath(d);
           if (property === "children" || property === "id") continue;
+
+          const isOverride = isInstance && isOverrideProperty(property);
 
           changes.push({
             pageName,
@@ -191,6 +195,7 @@ export function detectPageChanges(
             property,
             oldValue: "lhs" in d ? d.lhs : undefined,
             newValue: "rhs" in d ? d.rhs : undefined,
+            ...(isInstance ? { isOverride } : {}),
           });
         }
       }

@@ -8,6 +8,7 @@ import {
   loadPage,
   saveSnapshotMeta,
   savePage,
+  removePageSnapshot,
   removeLegacySnapshot,
 } from "./snapshot.js";
 import {
@@ -114,13 +115,13 @@ async function processFile(
   );
 
   const changes: ChangeEntry[] = [];
-  const currentPageNames: string[] = [];
+  const currentPageNamesSet = new Set<string>();
   let pageCount = 0;
 
   // Stream pages one at a time
   for await (const { pageName, node } of adapter.fetchPagesIter(fileKey, fetchOptions)) {
     pageCount++;
-    currentPageNames.push(pageName);
+    currentPageNamesSet.add(pageName);
 
     // Diff against previous page BEFORE saving (same path is used for per-page storage)
     if (hasPrevious) {
@@ -142,9 +143,9 @@ async function processFile(
 
   console.log(`  Fetched ${pageCount} page(s)`);
 
-  // Detect deleted pages (in previous but not in current)
+  // Detect deleted pages (in previous but not in current) and clean up stale files
   for (const prevPageName of previousPageNames) {
-    if (!currentPageNames.includes(prevPageName)) {
+    if (!currentPageNamesSet.has(prevPageName)) {
       // Load the deleted page to get its metadata for the change entry
       let deletedPage;
       if (isLegacyFormat) {
@@ -153,7 +154,9 @@ async function processFile(
         deletedPage = await loadPage(config.snapshotDir, fileKey, prevPageName);
       }
       const pageChanges = detectPageChanges(prevPageName, deletedPage ?? null, null);
-      changes.push(...pageChanges);
+      for (const c of pageChanges) changes.push(c);
+      // Remove stale page snapshot file
+      await removePageSnapshot(config.snapshotDir, fileKey, prevPageName);
     }
   }
 
@@ -176,7 +179,7 @@ async function processFile(
   await saveSnapshotMeta(config.snapshotDir, fileKey, {
     timestamp: new Date().toISOString(),
     versionId: latestVersionId,
-    pageNames: currentPageNames,
+    pageNames: [...currentPageNamesSet],
   });
 
   // Clean up legacy snapshot if it existed
@@ -192,7 +195,7 @@ async function processFile(
 
   if (!hasPrevious) {
     console.log("  No previous snapshot found. First run — baseline saved.");
-    return { fileKey, changes: [], editors: [], baselineCreated: true, pageNames: currentPageNames, fileName };
+    return { fileKey, changes: [], editors: [], baselineCreated: true, pageNames: [...currentPageNamesSet], fileName };
   }
 
   // Fetch editors since last snapshot only if there are changes
