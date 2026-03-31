@@ -1,8 +1,11 @@
-import { readFile, writeFile, mkdir, rm } from "node:fs/promises";
+import { readFile, writeFile, mkdir, rm, stat, rename } from "node:fs/promises";
 import { createWriteStream, existsSync } from "node:fs";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
 import type { FigmaNode } from "./figma-client.js";
+
+/** Maximum legacy snapshot file size in bytes (500 MiB). Files exceeding this are renamed aside to prevent OOM. */
+export const LEGACY_SNAPSHOT_MAX_BYTES = 500 * 1024 * 1024;
 
 export interface Snapshot {
   timestamp: string;
@@ -19,6 +22,43 @@ export interface SnapshotMeta {
 }
 
 // --- Legacy single-file format ---
+
+/**
+ * Check if a legacy snapshot file exceeds the size threshold.
+ * If it does, rename it aside (`.oversized`) and warn.
+ * Returns true if the file is safe to read, false if skipped.
+ */
+async function checkLegacyFileSize(path: string): Promise<boolean> {
+  try {
+    const st = await stat(path);
+    if (st.size > LEGACY_SNAPSHOT_MAX_BYTES) {
+      const mib = (st.size / (1024 * 1024)).toFixed(1);
+      const limitMib = (LEGACY_SNAPSHOT_MAX_BYTES / (1024 * 1024)).toFixed(0);
+      const asideBase = `${path}.oversized`;
+      let aside = asideBase;
+      if (existsSync(aside)) {
+        aside = `${asideBase}.${Date.now()}`;
+      }
+      console.warn(
+        `  Legacy snapshot ${path} is ${mib} MiB (limit: ${limitMib} MiB). Renaming to ${aside} to prevent OOM.`,
+      );
+      try {
+        await rename(path, aside);
+      } catch (renameErr) {
+        console.warn(`  Failed to rename oversized legacy snapshot ${path}:`, renameErr);
+      }
+      return false;
+    }
+    return true;
+  } catch (err) {
+    const error = err as NodeJS.ErrnoException;
+    if (error?.code === "ENOENT") {
+      return false;
+    }
+    console.warn(`  Failed to check legacy snapshot file size for ${path}:`, error);
+    return false;
+  }
+}
 
 function legacySnapshotPath(dir: string, fileKey: string): string {
   return join(dir, `${fileKey}.json`);
@@ -92,6 +132,8 @@ export async function loadSnapshot(
   // Fall back to legacy single-file format
   const legacyPath = legacySnapshotPath(dir, fileKey);
   if (!existsSync(legacyPath)) return null;
+
+  if (!(await checkLegacyFileSize(legacyPath))) return null;
 
   try {
     const raw = await readFile(legacyPath, "utf-8");
@@ -188,6 +230,7 @@ export async function loadPageFromLegacy(
 ): Promise<{ page: FigmaNode | null; meta: SnapshotMeta | null }> {
   const legacyPath = legacySnapshotPath(dir, fileKey);
   if (!existsSync(legacyPath)) return { page: null, meta: null };
+  if (!(await checkLegacyFileSize(legacyPath))) return { page: null, meta: null };
   try {
     const raw = await readFile(legacyPath, "utf-8");
     const snapshot = JSON.parse(raw) as Snapshot;

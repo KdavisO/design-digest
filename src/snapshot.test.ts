@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtemp, rm, writeFile, mkdir } from "node:fs/promises";
+import { mkdtemp, rm, writeFile, mkdir, truncate } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -12,7 +12,9 @@ import {
   saveSnapshot,
   saveSnapshotMeta,
   loadSnapshot,
+  loadPageFromLegacy,
   removePageSnapshot,
+  LEGACY_SNAPSHOT_MAX_BYTES,
 } from "./snapshot.js";
 
 function makePageNode(id: string, name: string): FigmaNode {
@@ -252,5 +254,84 @@ describe("loadSnapshotMeta validation", () => {
   it("returns null when meta file does not exist", async () => {
     const meta = await loadSnapshotMeta(tmpDir, fileKey);
     expect(meta).toBeNull();
+  });
+});
+
+describe("legacy snapshot size guard", () => {
+  let tmpDir: string;
+  const fileKey = "testFile123";
+
+  beforeEach(async () => {
+    tmpDir = await mkdtemp(join(tmpdir(), "snapshot-size-test-"));
+  });
+
+  afterEach(async () => {
+    await rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it("loadSnapshot loads small legacy file normally", async () => {
+    const legacyPath = join(tmpDir, `${fileKey}.json`);
+    const snapshot = {
+      timestamp: "2026-01-01T00:00:00Z",
+      fileKey,
+      pages: { "Page 1": makePageNode("0:1", "Page 1") },
+    };
+    await writeFile(legacyPath, JSON.stringify(snapshot));
+
+    const loaded = await loadSnapshot(tmpDir, fileKey);
+    expect(loaded).not.toBeNull();
+    expect(loaded!.fileKey).toBe(fileKey);
+  });
+
+  it("loadPageFromLegacy loads from small legacy file", async () => {
+    const legacyPath = join(tmpDir, `${fileKey}.json`);
+    const snapshot = {
+      timestamp: "2026-01-01T00:00:00Z",
+      fileKey,
+      pages: { "Page 1": makePageNode("0:1", "Page 1") },
+    };
+    await writeFile(legacyPath, JSON.stringify(snapshot));
+
+    const result = await loadPageFromLegacy(tmpDir, fileKey, "Page 1");
+    expect(result.page).not.toBeNull();
+    expect(result.meta).not.toBeNull();
+    expect(result.meta!.pageNames).toEqual(["Page 1"]);
+  });
+
+  it("loadSnapshot returns null when legacy file does not exist", async () => {
+    const loaded = await loadSnapshot(tmpDir, fileKey);
+    expect(loaded).toBeNull();
+  });
+
+  it("LEGACY_SNAPSHOT_MAX_BYTES is 500 MiB", () => {
+    expect(LEGACY_SNAPSHOT_MAX_BYTES).toBe(500 * 1024 * 1024);
+  });
+
+  it("loadSnapshot returns null and renames oversized legacy file", async () => {
+    const legacyPath = join(tmpDir, `${fileKey}.json`);
+    const oversizedPath = `${legacyPath}.oversized`;
+    // Create a sparse file exceeding the threshold
+    await writeFile(legacyPath, "");
+    await truncate(legacyPath, LEGACY_SNAPSHOT_MAX_BYTES + 1);
+
+    expect(existsSync(legacyPath)).toBe(true);
+
+    const loaded = await loadSnapshot(tmpDir, fileKey);
+    expect(loaded).toBeNull();
+    expect(existsSync(legacyPath)).toBe(false);
+    expect(existsSync(oversizedPath)).toBe(true);
+  });
+
+  it("loadPageFromLegacy returns null for oversized legacy file", async () => {
+    const legacyPath = join(tmpDir, `${fileKey}.json`);
+    const oversizedPath = `${legacyPath}.oversized`;
+    await writeFile(legacyPath, "");
+    await truncate(legacyPath, LEGACY_SNAPSHOT_MAX_BYTES + 1);
+
+    const result = await loadPageFromLegacy(tmpDir, fileKey, "Page 1");
+    expect(result.page).toBeNull();
+    expect(result.meta).toBeNull();
+    expect(existsSync(legacyPath)).toBe(false);
+    expect(existsSync(oversizedPath)).toBe(true);
   });
 });
