@@ -1,6 +1,7 @@
 import { readFile, writeFile, mkdir, rm } from "node:fs/promises";
 import { createWriteStream, existsSync } from "node:fs";
 import { join } from "node:path";
+import { createHash } from "node:crypto";
 import type { FigmaNode } from "./figma-client.js";
 
 export interface Snapshot {
@@ -35,10 +36,26 @@ function metaPath(dir: string, fileKey: string): string {
   return join(dir, fileKey, "meta.json");
 }
 
+/**
+ * Generate a filesystem-safe hash from a page name.
+ * Uses SHA-256 to avoid collisions on case-insensitive filesystems
+ * (e.g. macOS/Windows) where pages like "Page A" and "page a" would
+ * otherwise map to the same file via encodeURIComponent.
+ */
+export function hashPageName(pageName: string): string {
+  return createHash("sha256").update(pageName).digest("hex");
+}
+
+/**
+ * Legacy page file path using encodeURIComponent (pre-v0.2).
+ * Used only for migration from old snapshot format.
+ */
+function legacyPageFilePath(dir: string, fileKey: string, pageName: string): string {
+  return join(pageDir(dir, fileKey), `${encodeURIComponent(pageName)}.json`);
+}
+
 function pageFilePath(dir: string, fileKey: string, pageName: string): string {
-  // Encode pageName to be filesystem-safe
-  const safeName = encodeURIComponent(pageName);
-  return join(pageDir(dir, fileKey), `${safeName}.json`);
+  return join(pageDir(dir, fileKey), `${hashPageName(pageName)}.json`);
 }
 
 /**
@@ -110,6 +127,7 @@ export async function loadSnapshotMeta(
 
 /**
  * Load a single page from a per-page snapshot.
+ * Falls back to legacy encodeURIComponent-based filename for migration.
  */
 export async function loadPage(
   dir: string,
@@ -117,9 +135,16 @@ export async function loadPage(
   pageName: string,
 ): Promise<FigmaNode | null> {
   const path = pageFilePath(dir, fileKey, pageName);
-  if (!existsSync(path)) return null;
+  // Fall back to legacy encodeURIComponent-based path
+  const resolvedPath = existsSync(path)
+    ? path
+    : (() => {
+        const legacy = legacyPageFilePath(dir, fileKey, pageName);
+        return existsSync(legacy) ? legacy : null;
+      })();
+  if (!resolvedPath) return null;
   try {
-    const raw = await readFile(path, "utf-8");
+    const raw = await readFile(resolvedPath, "utf-8");
     return JSON.parse(raw) as FigmaNode;
   } catch (err) {
     console.warn(`  Failed to load page snapshot "${pageName}":`, err);
@@ -257,6 +282,7 @@ function writeNodeStream(filePath: string, node: FigmaNode): Promise<void> {
 
 /**
  * Save a single page to its own file.
+ * Cleans up legacy encodeURIComponent-based file if it exists.
  */
 export async function savePage(
   dir: string,
@@ -279,10 +305,16 @@ export async function savePage(
       throw err;
     }
   }
+  // Clean up legacy-named file after saving with new hash-based name
+  const legacy = legacyPageFilePath(dir, fileKey, pageName);
+  if (legacy !== filePath && existsSync(legacy)) {
+    await rm(legacy, { force: true });
+  }
 }
 
 /**
  * Remove a single page snapshot file.
+ * Also removes legacy encodeURIComponent-based file if it exists.
  */
 export async function removePageSnapshot(
   dir: string,
@@ -290,6 +322,11 @@ export async function removePageSnapshot(
   pageName: string,
 ): Promise<void> {
   await rm(pageFilePath(dir, fileKey, pageName), { force: true });
+  // Also clean up legacy-named file
+  const legacy = legacyPageFilePath(dir, fileKey, pageName);
+  if (existsSync(legacy)) {
+    await rm(legacy, { force: true });
+  }
 }
 
 /**
