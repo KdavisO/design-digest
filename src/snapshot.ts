@@ -301,10 +301,14 @@ export async function saveSnapshotMeta(
 }
 
 /**
- * Write a chunk to the stream, waiting for drain if backpressure is signalled.
+ * Write a chunk to the stream, waiting for `drain` if backpressure is signalled.
  *
- * If the stream errors or closes before `drain` fires, the returned Promise
- * will reject instead of hanging forever.
+ * Returns `true` immediately when `write()` succeeds without backpressure.
+ * When `write()` returns `false`, it instead returns a Promise that resolves
+ * once the stream emits `drain`.
+ *
+ * If the stream errors or closes before `drain` fires, that Promise will
+ * reject instead of hanging forever.
  */
 function writeChunk(ws: NodeJS.WritableStream, chunk: string): boolean | Promise<void> {
   const ok = ws.write(chunk);
