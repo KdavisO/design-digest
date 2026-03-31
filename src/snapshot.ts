@@ -106,6 +106,20 @@ export async function loadSnapshot(
   }
 }
 
+function isValidSnapshotMeta(data: unknown): data is SnapshotMeta {
+  if (typeof data !== "object" || data === null) return false;
+  const obj = data as Record<string, unknown>;
+  return (
+    typeof obj.timestamp === "string" &&
+    typeof obj.fileKey === "string" &&
+    Array.isArray(obj.pageNames) &&
+    obj.pageNames.every((p: unknown) => typeof p === "string") &&
+    (!("versionId" in obj) ||
+      obj.versionId === undefined ||
+      typeof obj.versionId === "string")
+  );
+}
+
 /**
  * Load snapshot metadata without loading page data.
  */
@@ -117,7 +131,18 @@ export async function loadSnapshotMeta(
   if (!existsSync(path)) return null;
   try {
     const raw = await readFile(path, "utf-8");
-    return JSON.parse(raw) as SnapshotMeta;
+    const parsed: unknown = JSON.parse(raw);
+    if (!isValidSnapshotMeta(parsed)) {
+      console.warn(`  Invalid snapshot meta shape at ${path}, removing corrupt file`);
+      await rm(path, { force: true }).catch(() => {});
+      return null;
+    }
+    if (parsed.fileKey !== fileKey) {
+      console.warn(`  Snapshot meta fileKey mismatch at ${path} (expected ${fileKey}, got ${parsed.fileKey}), removing`);
+      await rm(path, { force: true }).catch(() => {});
+      return null;
+    }
+    return parsed;
   } catch (err) {
     console.warn(`  Failed to load snapshot meta at ${path}, treating as missing:`, err);
     await rm(path, { force: true }).catch(() => {});
