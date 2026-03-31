@@ -302,12 +302,38 @@ export async function saveSnapshotMeta(
 
 /**
  * Write a chunk to the stream, waiting for drain if backpressure is signalled.
+ *
+ * If the stream errors or closes before `drain` fires, the returned Promise
+ * will reject instead of hanging forever.
  */
 function writeChunk(ws: NodeJS.WritableStream, chunk: string): boolean | Promise<void> {
   const ok = ws.write(chunk);
   if (ok) return true;
-  return new Promise<void>((resolve) => {
-    ws.once("drain", resolve);
+  return new Promise<void>((resolve, reject) => {
+    const cleanup = () => {
+      ws.removeListener("drain", onDrain);
+      ws.removeListener("error", onError);
+      ws.removeListener("close", onClose);
+    };
+
+    const onDrain = () => {
+      cleanup();
+      resolve();
+    };
+
+    const onError = (err: Error) => {
+      cleanup();
+      reject(err);
+    };
+
+    const onClose = () => {
+      cleanup();
+      reject(new Error("Writable stream closed before drain event"));
+    };
+
+    ws.once("drain", onDrain);
+    ws.once("error", onError);
+    ws.once("close", onClose);
   });
 }
 
@@ -392,19 +418,28 @@ async function streamJsonValue(ws: NodeJS.WritableStream, root: unknown): Promis
 function writeNodeStream(filePath: string, node: FigmaNode): Promise<void> {
   return new Promise((resolve, reject) => {
     const ws = createWriteStream(filePath, { encoding: "utf-8" });
-    ws.on("error", (err) => {
+    let settled = false;
+
+    const fail = (err: unknown) => {
+      if (settled) return;
+      settled = true;
       ws.destroy();
       reject(err);
-    });
+    };
+
+    ws.on("error", fail);
+
     streamJsonValue(ws, node)
       .then(() => {
-        ws.write("\n");
-        ws.end(() => resolve());
+        if (settled) return;
+        // Include final newline as part of the final flush to respect backpressure.
+        ws.end("\n", () => {
+          if (settled) return;
+          settled = true;
+          resolve();
+        });
       })
-      .catch((err) => {
-        ws.destroy();
-        reject(err);
-      });
+      .catch(fail);
   });
 }
 
