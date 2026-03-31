@@ -7,8 +7,10 @@ import type { FigmaNode } from "./figma-client.js";
 import {
   hashPageName,
   loadPage,
+  loadSnapshotMeta,
   savePage,
   saveSnapshot,
+  saveSnapshotMeta,
   loadSnapshot,
   removePageSnapshot,
 } from "./snapshot.js";
@@ -140,5 +142,96 @@ describe("snapshot page file migration", () => {
     expect(loaded!.pages["Page A"]).toEqual(pages["Page A"]);
     expect(loaded!.pages["page a"]).toEqual(pages["page a"]);
     expect(loaded!.versionId).toBe("v1");
+  });
+});
+
+describe("loadSnapshotMeta validation", () => {
+  let tmpDir: string;
+  const fileKey = "testFile123";
+
+  beforeEach(async () => {
+    tmpDir = await mkdtemp(join(tmpdir(), "snapshot-meta-test-"));
+  });
+
+  afterEach(async () => {
+    await rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it("returns valid meta after saveSnapshotMeta round-trip", async () => {
+    await saveSnapshotMeta(tmpDir, fileKey, {
+      timestamp: "2026-01-01T00:00:00Z",
+      versionId: "v1",
+      pageNames: ["Page A", "Page B"],
+    });
+    const meta = await loadSnapshotMeta(tmpDir, fileKey);
+    expect(meta).toEqual({
+      timestamp: "2026-01-01T00:00:00Z",
+      fileKey,
+      versionId: "v1",
+      pageNames: ["Page A", "Page B"],
+    });
+  });
+
+  it("returns null and deletes file when meta has invalid shape", async () => {
+    const dir = join(tmpDir, fileKey);
+    await mkdir(dir, { recursive: true });
+    const metaFile = join(dir, "meta.json");
+    await writeFile(metaFile, JSON.stringify({ foo: "bar" }));
+
+    const meta = await loadSnapshotMeta(tmpDir, fileKey);
+    expect(meta).toBeNull();
+    expect(existsSync(metaFile)).toBe(false);
+  });
+
+  it("returns null and deletes file when pageNames contains non-strings", async () => {
+    const dir = join(tmpDir, fileKey);
+    await mkdir(dir, { recursive: true });
+    const metaFile = join(dir, "meta.json");
+    await writeFile(
+      metaFile,
+      JSON.stringify({
+        timestamp: "2026-01-01T00:00:00Z",
+        fileKey,
+        pageNames: ["Page A", 123],
+      }),
+    );
+
+    const meta = await loadSnapshotMeta(tmpDir, fileKey);
+    expect(meta).toBeNull();
+    expect(existsSync(metaFile)).toBe(false);
+  });
+
+  it("returns null and deletes file when fileKey does not match", async () => {
+    const dir = join(tmpDir, fileKey);
+    await mkdir(dir, { recursive: true });
+    const metaFile = join(dir, "meta.json");
+    await writeFile(
+      metaFile,
+      JSON.stringify({
+        timestamp: "2026-01-01T00:00:00Z",
+        fileKey: "differentKey",
+        pageNames: ["Page A"],
+      }),
+    );
+
+    const meta = await loadSnapshotMeta(tmpDir, fileKey);
+    expect(meta).toBeNull();
+    expect(existsSync(metaFile)).toBe(false);
+  });
+
+  it("returns null and deletes file when JSON is malformed", async () => {
+    const dir = join(tmpDir, fileKey);
+    await mkdir(dir, { recursive: true });
+    const metaFile = join(dir, "meta.json");
+    await writeFile(metaFile, "not valid json{{{");
+
+    const meta = await loadSnapshotMeta(tmpDir, fileKey);
+    expect(meta).toBeNull();
+    expect(existsSync(metaFile)).toBe(false);
+  });
+
+  it("returns null when meta file does not exist", async () => {
+    const meta = await loadSnapshotMeta(tmpDir, fileKey);
+    expect(meta).toBeNull();
   });
 });
