@@ -429,15 +429,19 @@ function writeNodeStream(filePath: string, node: FigmaNode): Promise<void> {
 
     ws.on("error", fail);
 
+    // Wait for 'close' (fd released) rather than just 'finish' (data flushed)
+    // so that the subsequent rename() in writeNodeStreamAtomic is safe cross-platform.
+    ws.on("close", () => {
+      if (settled) return;
+      settled = true;
+      resolve();
+    });
+
     streamJsonValue(ws, node)
       .then(() => {
         if (settled) return;
         // Include final newline as part of the final flush to respect backpressure.
-        ws.end("\n", () => {
-          if (settled) return;
-          settled = true;
-          resolve();
-        });
+        ws.end("\n");
       })
       .catch(fail);
   });
