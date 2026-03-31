@@ -14,6 +14,7 @@ import {
   loadSnapshot,
   loadPageFromLegacy,
   removePageSnapshot,
+  validateSnapshotPages,
   LEGACY_SNAPSHOT_MAX_BYTES,
 } from "./snapshot.js";
 
@@ -333,5 +334,74 @@ describe("legacy snapshot size guard", () => {
     expect(result.meta).toBeNull();
     expect(existsSync(legacyPath)).toBe(false);
     expect(existsSync(oversizedPath)).toBe(true);
+  });
+});
+
+describe("validateSnapshotPages", () => {
+  let tmpDir: string;
+  const fileKey = "testFile123";
+
+  beforeEach(async () => {
+    tmpDir = await mkdtemp(join(tmpdir(), "snapshot-validate-test-"));
+  });
+
+  afterEach(async () => {
+    await rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it("returns empty set when all page files exist", async () => {
+    await savePage(tmpDir, fileKey, "Page A", makePageNode("0:1", "Page A"));
+    await savePage(tmpDir, fileKey, "Page B", makePageNode("0:2", "Page B"));
+    await saveSnapshotMeta(tmpDir, fileKey, {
+      timestamp: "2026-01-01T00:00:00Z",
+      pageNames: ["Page A", "Page B"],
+    });
+
+    const meta = await loadSnapshotMeta(tmpDir, fileKey);
+    const missing = await validateSnapshotPages(tmpDir, fileKey, meta!);
+    expect(missing.size).toBe(0);
+  });
+
+  it("returns missing page names when page files are absent", async () => {
+    await savePage(tmpDir, fileKey, "Page A", makePageNode("0:1", "Page A"));
+    // Page B is NOT saved — simulating a missing file
+    await saveSnapshotMeta(tmpDir, fileKey, {
+      timestamp: "2026-01-01T00:00:00Z",
+      pageNames: ["Page A", "Page B"],
+    });
+
+    const meta = await loadSnapshotMeta(tmpDir, fileKey);
+    const missing = await validateSnapshotPages(tmpDir, fileKey, meta!);
+    expect(missing.size).toBe(1);
+    expect(missing.has("Page B")).toBe(true);
+  });
+
+  it("recognizes legacy-format page files as present", async () => {
+    // Create a legacy-format page file (encodeURIComponent)
+    const pagesDir = join(tmpDir, fileKey, "pages");
+    await mkdir(pagesDir, { recursive: true });
+    const legacyPath = join(pagesDir, `${encodeURIComponent("Page A")}.json`);
+    await writeFile(legacyPath, JSON.stringify(makePageNode("0:1", "Page A")));
+
+    await saveSnapshotMeta(tmpDir, fileKey, {
+      timestamp: "2026-01-01T00:00:00Z",
+      pageNames: ["Page A"],
+    });
+
+    const meta = await loadSnapshotMeta(tmpDir, fileKey);
+    const missing = await validateSnapshotPages(tmpDir, fileKey, meta!);
+    expect(missing.size).toBe(0);
+  });
+
+  it("returns all page names when no page files exist", async () => {
+    // Only create meta, no page files
+    await saveSnapshotMeta(tmpDir, fileKey, {
+      timestamp: "2026-01-01T00:00:00Z",
+      pageNames: ["Page A", "Page B", "Page C"],
+    });
+
+    const meta = await loadSnapshotMeta(tmpDir, fileKey);
+    const missing = await validateSnapshotPages(tmpDir, fileKey, meta!);
+    expect(missing.size).toBe(3);
   });
 });

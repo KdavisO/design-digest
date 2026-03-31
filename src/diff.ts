@@ -10,6 +10,7 @@ import {
   savePage,
   removePageSnapshot,
   removeLegacySnapshot,
+  validateSnapshotPages,
 } from "./snapshot.js";
 import {
   detectPageChanges,
@@ -77,6 +78,20 @@ async function processFile(
       }
     }
   }
+  // Validate page file integrity for per-page format
+  let missingPages = new Set<string>();
+  if (previousMeta) {
+    missingPages = await validateSnapshotPages(config.snapshotDir, fileKey, previousMeta);
+    if (missingPages.size > 0) {
+      console.warn(
+        `  ⚠️ Snapshot for fileKey "${fileKey}" has ${missingPages.size} missing page file(s): ${[...missingPages].join(", ")}`,
+      );
+      console.warn(
+        "  Missing pages will be skipped in diff to avoid false-positive detections.",
+      );
+    }
+  }
+
   const hasPrevious = previousMeta !== null || previous !== null;
   const previousVersionId = previousMeta?.versionId ?? previous?.versionId;
 
@@ -144,11 +159,18 @@ async function processFile(
       if (isLegacyFormat) {
         previousPage = previous!.pages[pageName] ?? null;
       } else if (previousMeta) {
-        previousPage = await loadPage(config.snapshotDir, fileKey, pageName);
+        // Skip diff for pages whose snapshot file is missing to avoid false-positive "added"
+        if (missingPages.has(pageName)) {
+          // Page existed in previous meta but file is gone — skip diff, save current for next run
+        } else {
+          previousPage = await loadPage(config.snapshotDir, fileKey, pageName);
+        }
       }
 
-      const pageChanges = detectPageChanges(pageName, previousPage ?? null, node);
-      for (const c of pageChanges) changes.push(c);
+      if (!missingPages.has(pageName)) {
+        const pageChanges = detectPageChanges(pageName, previousPage ?? null, node);
+        for (const c of pageChanges) changes.push(c);
+      }
     }
 
     // Save current page (overwrites previous page file)
@@ -161,6 +183,12 @@ async function processFile(
   // Detect deleted pages (in previous but not in current) and clean up stale files
   for (const prevPageName of previousPageNames) {
     if (!currentPageNamesSet.has(prevPageName)) {
+      // Skip diff for pages whose snapshot file is missing to avoid false-positive "deleted"
+      if (missingPages.has(prevPageName)) {
+        // Clean up stale meta reference but don't report as deleted
+        await removePageSnapshot(config.snapshotDir, fileKey, prevPageName);
+        continue;
+      }
       // Load the deleted page to get its metadata for the change entry
       let deletedPage;
       if (isLegacyFormat) {
