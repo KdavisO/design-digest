@@ -237,7 +237,8 @@ export async function savePage(
   try {
     await writeFile(filePath, JSON.stringify(node, null, 2));
   } catch (err) {
-    if (err instanceof RangeError && /string length/i.test(err.message)) {
+    if (err instanceof RangeError) {
+      // Covers both "Invalid string length" and "Maximum call stack size exceeded"
       await writeNodeStream(filePath, node);
     } else {
       throw err;
