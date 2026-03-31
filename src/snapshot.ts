@@ -573,6 +573,7 @@ export class StagedSnapshotWriter {
   private readonly stagingDir: string;
   private readonly backupDir: string;
   private readonly stagingPagesDir: string;
+  private stagingDirCreated = false;
 
   constructor(
     private readonly dir: string,
@@ -584,13 +585,18 @@ export class StagedSnapshotWriter {
     this.stagingPagesDir = join(this.stagingDir, "pages");
   }
 
+  private async ensureStagingDir(): Promise<void> {
+    if (!this.stagingDirCreated) {
+      await mkdir(this.stagingPagesDir, { recursive: true });
+      this.stagingDirCreated = true;
+    }
+  }
+
   /**
    * Save a page to the staging directory.
    */
   async savePage(pageName: string, node: FigmaNode): Promise<void> {
-    if (!existsSync(this.stagingPagesDir)) {
-      await mkdir(this.stagingPagesDir, { recursive: true });
-    }
+    await this.ensureStagingDir();
     const filePath = join(this.stagingPagesDir, `${hashPageName(pageName)}.json`);
     try {
       await writeFileAtomic(filePath, JSON.stringify(node, null, 2));
@@ -616,6 +622,10 @@ export class StagedSnapshotWriter {
    * Any crash between steps is recoverable via `recover()`.
    */
   async commit(meta: Omit<SnapshotMeta, "fileKey">): Promise<void> {
+    // Ensure staging dir exists even if savePage() was never called
+    // (e.g. fetchPagesIter yielded 0 pages)
+    await this.ensureStagingDir();
+
     const data: SnapshotMeta = { ...meta, fileKey: this.fileKey };
     await writeFileAtomic(
       join(this.stagingDir, "meta.json"),
@@ -666,10 +676,19 @@ export class StagedSnapshotWriter {
     const hasStaging = existsSync(stagingDir);
     const hasBackup = existsSync(backupDir);
 
-    if (hasBackup && !hasLive && hasStaging) {
+    // A staging directory is considered complete if it contains meta.json.
+    // Without meta.json, the staging snapshot is incomplete and must be discarded.
+    const stagingComplete = hasStaging && existsSync(join(stagingDir, "meta.json"));
+
+    if (hasBackup && !hasLive && hasStaging && stagingComplete) {
       // Crash between live→backup and staging→live: complete the swap
       await rename(stagingDir, liveDir);
       await rm(backupDir, { recursive: true, force: true });
+    } else if (hasBackup && !hasLive && hasStaging && !stagingComplete) {
+      // Crash between live→backup and staging→live, but staging is incomplete:
+      // discard staging and restore backup
+      await rm(stagingDir, { recursive: true, force: true });
+      await rename(backupDir, liveDir);
     } else if (hasBackup && hasLive) {
       // Crash after staging→live: just clean up backup
       await rm(backupDir, { recursive: true, force: true });
@@ -679,9 +698,12 @@ export class StagedSnapshotWriter {
     } else if (hasStaging && hasLive) {
       // Crash during staging write with live intact: discard staging
       await rm(stagingDir, { recursive: true, force: true });
-    } else if (hasStaging && !hasLive) {
-      // Only staging exists (may be complete): promote it
+    } else if (hasStaging && !hasLive && stagingComplete) {
+      // Only staging exists and is complete: promote it
       await rename(stagingDir, liveDir);
+    } else if (hasStaging && !hasLive && !stagingComplete) {
+      // Only staging exists but is incomplete: discard it
+      await rm(stagingDir, { recursive: true, force: true });
     }
   }
 }

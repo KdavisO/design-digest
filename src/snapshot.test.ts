@@ -537,6 +537,20 @@ describe("StagedSnapshotWriter", () => {
     expect(await loadPage(tmpDir, fileKey, "Old Page")).toBeNull();
   });
 
+  it("commit works when savePage was never called (0 pages)", async () => {
+    const writer = new StagedSnapshotWriter(tmpDir, fileKey);
+    // Commit without any savePage calls (e.g. empty Figma file)
+    await writer.commit({
+      timestamp: "2026-01-01T00:00:00Z",
+      pageNames: [],
+    });
+
+    const meta = await loadSnapshotMeta(tmpDir, fileKey);
+    expect(meta).not.toBeNull();
+    expect(meta!.pageNames).toEqual([]);
+    expect(existsSync(join(tmpDir, `${fileKey}.next`))).toBe(false);
+  });
+
   it("abort cleans up staging directory", async () => {
     const writer = new StagedSnapshotWriter(tmpDir, fileKey);
     await writer.savePage("Page A", makePageNode("0:1", "Page A"));
@@ -660,6 +674,44 @@ describe("StagedSnapshotWriter", () => {
       expect(existsSync(stagingDir)).toBe(false);
       const meta = await loadSnapshotMeta(tmpDir, fileKey);
       expect(meta!.pageNames).toEqual(["Page A"]);
+    });
+
+    it("discards incomplete staging when no live exists (staging without meta.json)", async () => {
+      const stagingDir = join(tmpDir, `${fileKey}.next`);
+      // Create staging dir with pages but NO meta.json (crash mid-write on first run)
+      await mkdir(join(stagingDir, "pages"), { recursive: true });
+      await writeFile(
+        join(stagingDir, "pages", `${hashPageName("Page A")}.json`),
+        JSON.stringify(makePageNode("0:1", "Page A")),
+      );
+
+      await StagedSnapshotWriter.recover(tmpDir, fileKey);
+
+      // Incomplete staging should be discarded, not promoted
+      expect(existsSync(stagingDir)).toBe(false);
+      expect(existsSync(join(tmpDir, fileKey))).toBe(false);
+    });
+
+    it("restores backup when staging is incomplete (backup + incomplete staging, no live)", async () => {
+      const backupDir = join(tmpDir, `${fileKey}.old`);
+      const stagingDir = join(tmpDir, `${fileKey}.next`);
+
+      // Create backup (old live)
+      await mkdir(join(backupDir, "pages"), { recursive: true });
+      await writeFile(join(backupDir, "meta.json"), JSON.stringify({
+        timestamp: "2025-01-01T00:00:00Z", fileKey, pageNames: ["Old"],
+      }));
+
+      // Create incomplete staging (no meta.json)
+      await mkdir(join(stagingDir, "pages"), { recursive: true });
+
+      await StagedSnapshotWriter.recover(tmpDir, fileKey);
+
+      // Should discard staging and restore backup
+      expect(existsSync(stagingDir)).toBe(false);
+      expect(existsSync(backupDir)).toBe(false);
+      const meta = await loadSnapshotMeta(tmpDir, fileKey);
+      expect(meta!.pageNames).toEqual(["Old"]);
     });
 
     it("promotes staging when no live exists (staging only, first run crash)", async () => {
