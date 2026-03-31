@@ -658,6 +658,35 @@ describe("StagedSnapshotWriter", () => {
       expect(existsSync(backupDir)).toBe(false);
     });
 
+    it("completes swap when staging is complete but swap never started (live + complete staging)", async () => {
+      // Create live (old snapshot)
+      await savePage(tmpDir, fileKey, "Old Page", makePageNode("0:0", "Old Page"));
+      await saveSnapshotMeta(tmpDir, fileKey, {
+        timestamp: "2025-01-01T00:00:00Z", pageNames: ["Old Page"],
+      });
+
+      // Create complete staging (new snapshot, crash before swap)
+      const stagingDir = join(tmpDir, `${fileKey}.next`);
+      await mkdir(join(stagingDir, "pages"), { recursive: true });
+      await writeFile(
+        join(stagingDir, "pages", `${hashPageName("New Page")}.json`),
+        JSON.stringify(makePageNode("0:1", "New Page")),
+      );
+      await writeFile(join(stagingDir, "meta.json"), JSON.stringify({
+        timestamp: "2026-01-01T00:00:00Z", fileKey, pageNames: ["New Page"],
+      }));
+
+      await StagedSnapshotWriter.recover(tmpDir, fileKey);
+
+      // Should have completed the swap: new data is live, old data is gone
+      const meta = await loadSnapshotMeta(tmpDir, fileKey);
+      expect(meta!.pageNames).toEqual(["New Page"]);
+      expect(await loadPage(tmpDir, fileKey, "New Page")).toEqual(makePageNode("0:1", "New Page"));
+      expect(await loadPage(tmpDir, fileKey, "Old Page")).toBeNull();
+      expect(existsSync(stagingDir)).toBe(false);
+      expect(existsSync(join(tmpDir, `${fileKey}.old`))).toBe(false);
+    });
+
     it("discards incomplete staging when live is intact (live + staging)", async () => {
       // Create live
       await savePage(tmpDir, fileKey, "Page A", makePageNode("0:1", "Page A"));

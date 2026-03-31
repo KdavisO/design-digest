@@ -695,8 +695,14 @@ export class StagedSnapshotWriter {
     } else if (hasBackup && !hasLive && !hasStaging) {
       // Crash after live→backup with staging lost: restore backup
       await rename(backupDir, liveDir);
+    } else if (hasStaging && hasLive && stagingComplete) {
+      // Crash after fully writing staging but before swap began:
+      // complete the swap to avoid losing the new snapshot update
+      await rename(liveDir, backupDir);
+      await rename(stagingDir, liveDir);
+      await rm(backupDir, { recursive: true, force: true });
     } else if (hasStaging && hasLive) {
-      // Crash during staging write with live intact: discard staging
+      // Crash during staging write with live intact and incomplete staging: discard
       await rm(stagingDir, { recursive: true, force: true });
     } else if (hasStaging && !hasLive && stagingComplete) {
       // Only staging exists and is complete: promote it
