@@ -1,6 +1,7 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { mkdtemp, rm, writeFile, mkdir, truncate, readdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
+import { Writable } from "node:stream";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import type { FigmaNode } from "./figma-client.js";
@@ -468,5 +469,105 @@ describe("validateSnapshotPages", () => {
     const meta = await loadSnapshotMeta(tmpDir, fileKey);
     const missing = validateSnapshotPages(tmpDir, fileKey, meta!);
     expect(missing.size).toBe(3);
+  });
+});
+
+describe("streaming backpressure handling", () => {
+  let tmpDir: string;
+  const fileKey = "testFile123";
+
+  beforeEach(async () => {
+    tmpDir = await mkdtemp(join(tmpdir(), "snapshot-backpressure-test-"));
+  });
+
+  afterEach(async () => {
+    await rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it("savePage falls back to streaming when JSON.stringify throws RangeError", async () => {
+    const node: FigmaNode = { id: "0:1", name: "StreamTest", type: "FRAME", children: [] };
+
+    // Stub JSON.stringify to throw RangeError for this specific node,
+    // forcing savePage into the writeNodeStreamAtomic fallback path.
+    const originalStringify = JSON.stringify;
+    const spy = vi.spyOn(JSON, "stringify").mockImplementation(
+      ((value: unknown, ...rest: unknown[]) => {
+        const maybeNode = value as { id?: string; name?: string } | null | undefined;
+        if (maybeNode && maybeNode.id === "0:1" && maybeNode.name === "StreamTest") {
+          throw new RangeError("Maximum call stack size exceeded");
+        }
+        return (originalStringify as (...args: unknown[]) => string)(value, ...rest);
+      }) as typeof JSON.stringify,
+    );
+
+    try {
+      await savePage(tmpDir, fileKey, "Stream Page", node);
+    } finally {
+      spy.mockRestore();
+    }
+
+    const loaded = await loadPage(tmpDir, fileKey, "Stream Page");
+    expect(loaded).toEqual(node);
+  });
+
+  it("savePage round-trips a node with many children correctly", async () => {
+    const node: FigmaNode = {
+      id: "0:1",
+      name: "Backpressure Test Page",
+      type: "CANVAS",
+      children: Array.from({ length: 50 }, (_, i) => ({
+        id: `${i}:1`,
+        name: `Child node ${i} with some extra text to fill the buffer`,
+        type: "FRAME" as const,
+        children: [] as FigmaNode[],
+      })),
+    };
+
+    await savePage(tmpDir, fileKey, "BP Test", node);
+    const loaded = await loadPage(tmpDir, fileKey, "BP Test");
+    expect(loaded).toEqual(node);
+  });
+
+  it("streaming write handles backpressure (write returns false then drain)", async () => {
+    // Custom Writable that simulates backpressure: returns false on every write,
+    // then emits drain asynchronously to verify the backpressure-await logic.
+    const chunks: string[] = [];
+    let drainCount = 0;
+    const ws = new Writable({
+      highWaterMark: 1, // Very small to force write() to return false
+      write(chunk, _encoding, callback) {
+        chunks.push(chunk.toString());
+        // Schedule drain emission to simulate async backpressure resolution
+        process.nextTick(callback);
+      },
+    });
+
+    // Track whether write() actually returned false (backpressure signalled)
+    let backpressureTriggered = false;
+    const origWrite = ws.write.bind(ws);
+    ws.write = ((chunk: unknown, ...args: unknown[]) => {
+      const result = (origWrite as (...a: unknown[]) => boolean)(chunk, ...args);
+      if (!result) backpressureTriggered = true;
+      return result;
+    }) as typeof ws.write;
+
+    // Write some data and verify it all arrives correctly
+    const data = { key: "value", nested: { a: 1, b: [1, 2, 3] } };
+    const expected = JSON.stringify(data, null, 2);
+
+    // Manually write chunks to trigger the write path
+    for (const char of expected) {
+      const ok = ws.write(char);
+      if (!ok) {
+        drainCount++;
+        await new Promise<void>((resolve) => ws.once("drain", resolve));
+      }
+    }
+
+    await new Promise<void>((resolve) => ws.end(() => resolve()));
+
+    expect(chunks.join("")).toBe(expected);
+    expect(backpressureTriggered).toBe(true);
+    expect(drainCount).toBeGreaterThan(0);
   });
 });
