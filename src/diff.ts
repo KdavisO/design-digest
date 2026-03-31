@@ -228,7 +228,11 @@ async function processFile(
       pageNames: [...currentPageNamesSet],
     });
   } catch (err) {
-    await writer.abort();
+    try {
+      await writer.abort();
+    } catch (abortErr) {
+      console.warn("  Failed to abort staged snapshot after error:", abortErr);
+    }
     throw err;
   }
 
