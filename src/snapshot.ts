@@ -1,4 +1,4 @@
-import { readFile, writeFile, mkdir, readdir, rm } from "node:fs/promises";
+import { readFile, writeFile, mkdir, rm } from "node:fs/promises";
 import { createWriteStream, existsSync } from "node:fs";
 import { join } from "node:path";
 import type { FigmaNode } from "./figma-client.js";

@@ -6,14 +6,11 @@ import {
   loadSnapshot,
   loadSnapshotMeta,
   loadPage,
-  loadPageFromLegacy,
   saveSnapshotMeta,
   savePage,
   removeLegacySnapshot,
 } from "./snapshot.js";
-import type { SnapshotMeta } from "./snapshot.js";
 import {
-  detectChanges,
   detectPageChanges,
   buildReport,
   formatSlackBlocks,
