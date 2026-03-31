@@ -543,16 +543,55 @@ export function filterWatchTargets(
   return pages.filter((page) => watchPages.includes(page.name));
 }
 
-export function sanitizeNode<T>(node: T): T {
-  if (node === null || typeof node !== "object") return node;
-  if (Array.isArray(node)) return node.map(sanitizeNode) as T;
+export function sanitizeNode<T>(root: T): T {
+  if (root === null || typeof root !== "object") return root;
 
-  const result = Object.create(null) as Record<string, unknown>;
-  for (const [key, value] of Object.entries(node as Record<string, unknown>)) {
-    if (NOISE_KEYS.has(key)) continue;
-    result[key] = sanitizeNode(value);
+  // Iterative deep clone with noise key removal.
+  // Uses a work queue of { source, target, key } to avoid call-stack overflow
+  // on deeply nested Figma nodes.
+  type Task = { source: unknown; parent: Record<string, unknown> | unknown[]; key: string | number };
+
+  function shallowClone(value: unknown): { clone: unknown; tasks: Task[] } {
+    if (value === null || typeof value !== "object") return { clone: value, tasks: [] };
+    if (Array.isArray(value)) {
+      const arr: unknown[] = new Array(value.length);
+      const tasks: Task[] = [];
+      for (let i = 0; i < value.length; i++) {
+        const item = value[i];
+        if (item === null || typeof item !== "object") {
+          arr[i] = item;
+        } else {
+          arr[i] = undefined; // placeholder
+          tasks.push({ source: item, parent: arr, key: i });
+        }
+      }
+      return { clone: arr, tasks };
+    }
+    const obj = Object.create(null) as Record<string, unknown>;
+    const tasks: Task[] = [];
+    for (const [key, val] of Object.entries(value as Record<string, unknown>)) {
+      if (NOISE_KEYS.has(key)) continue;
+      if (val === null || typeof val !== "object") {
+        obj[key] = val;
+      } else {
+        obj[key] = undefined; // placeholder
+        tasks.push({ source: val, parent: obj, key });
+      }
+    }
+    return { clone: obj, tasks };
   }
-  return result as T;
+
+  const { clone: rootClone, tasks: initialTasks } = shallowClone(root);
+  const queue = initialTasks;
+
+  while (queue.length > 0) {
+    const task = queue.pop()!;
+    const { clone, tasks } = shallowClone(task.source);
+    (task.parent as Record<string | number, unknown>)[task.key] = clone;
+    for (const t of tasks) queue.push(t);
+  }
+
+  return rootClone as T;
 }
 
 /**

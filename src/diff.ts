@@ -2,9 +2,17 @@ import "dotenv/config";
 import { loadConfig } from "./config.js";
 import { FigmaRestAdapter } from "./adapters/figma-rest-adapter.js";
 import type { FigmaUser } from "./figma-client.js";
-import { loadSnapshot, saveSnapshot } from "./snapshot.js";
 import {
-  detectChanges,
+  loadSnapshot,
+  loadSnapshotMeta,
+  loadPage,
+  saveSnapshotMeta,
+  savePage,
+  removePageSnapshot,
+  removeLegacySnapshot,
+} from "./snapshot.js";
+import {
+  detectPageChanges,
   buildReport,
   formatSlackBlocks,
   formatSlackReport,
@@ -47,18 +55,40 @@ async function processFile(
   config: Config,
   fileKey: string,
 ): Promise<{ fileKey: string; changes: ChangeEntry[]; editors: FigmaUser[]; baselineCreated: boolean; pageNames?: string[]; fileName?: string }> {
-  // Load previous snapshot
-  const previous = await loadSnapshot(config.snapshotDir, fileKey);
+  // Load previous snapshot metadata (lightweight — no page data)
+  const previousMeta = await loadSnapshotMeta(config.snapshotDir, fileKey);
+  // Fall back to legacy single-file snapshot if per-page format not found
+  let previous: Awaited<ReturnType<typeof loadSnapshot>> | null = null;
+  if (!previousMeta) {
+    try {
+      previous = await loadSnapshot(config.snapshotDir, fileKey);
+    } catch (err) {
+      console.warn(
+        "  Failed to load legacy snapshot, treating as no previous snapshot:",
+        err,
+      );
+      try {
+        await removeLegacySnapshot(config.snapshotDir, fileKey);
+      } catch (removeErr) {
+        console.warn(
+          "  Also failed to remove legacy snapshot file:",
+          removeErr,
+        );
+      }
+    }
+  }
+  const hasPrevious = previousMeta !== null || previous !== null;
+  const previousVersionId = previousMeta?.versionId ?? previous?.versionId;
 
   // Step 1: Version history check (skip if no previous snapshot)
   let latestVersionId: string | undefined;
   let versionCheckAttempted = false;
-  if (previous?.versionId) {
+  if (previousVersionId) {
     try {
       console.log("  Checking version history...");
       const versionCheck = await adapter.checkVersionChanged(
         fileKey,
-        previous.versionId,
+        previousVersionId,
       );
       versionCheckAttempted = true;
       latestVersionId = versionCheck.latestVersionId;
@@ -72,8 +102,8 @@ async function processFile(
     }
   }
 
-  // Step 2: Fetch current state from Figma via FigmaRestAdapter
-  // The adapter handles proactive chunking, payload-too-large fallback, and sanitization.
+  // Step 2: Fetch current state from Figma via streaming adapter
+  // Process pages one at a time: fetch → save → diff → release from memory
   const fetchOptions = {
     watchPages: config.figmaWatchPages,
     watchNodeIds: config.figmaWatchNodeIds,
@@ -93,9 +123,57 @@ async function processFile(
     console.log(`  Fetching full file (proactive strategy)...`);
   }
 
-  const pages = await adapter.fetchPages(fileKey, fetchOptions);
+  // Track whether we're using legacy format (need to load full snapshot for per-page access)
+  const isLegacyFormat = !previousMeta && previous !== null;
+  const previousPageNames = new Set(
+    previousMeta?.pageNames ?? (previous ? Object.keys(previous.pages) : []),
+  );
 
-  console.log(`  Fetched ${Object.keys(pages).length} page(s)`);
+  const changes: ChangeEntry[] = [];
+  const currentPageNamesSet = new Set<string>();
+  let pageCount = 0;
+
+  // Stream pages one at a time
+  for await (const { pageName, node } of adapter.fetchPagesIter(fileKey, fetchOptions)) {
+    pageCount++;
+    currentPageNamesSet.add(pageName);
+
+    // Diff against previous page BEFORE saving (same path is used for per-page storage)
+    if (hasPrevious) {
+      let previousPage;
+      if (isLegacyFormat) {
+        previousPage = previous!.pages[pageName] ?? null;
+      } else if (previousMeta) {
+        previousPage = await loadPage(config.snapshotDir, fileKey, pageName);
+      }
+
+      const pageChanges = detectPageChanges(pageName, previousPage ?? null, node);
+      for (const c of pageChanges) changes.push(c);
+    }
+
+    // Save current page (overwrites previous page file)
+    await savePage(config.snapshotDir, fileKey, pageName, node);
+    // node goes out of scope after this iteration, GC can collect
+  }
+
+  console.log(`  Fetched ${pageCount} page(s)`);
+
+  // Detect deleted pages (in previous but not in current) and clean up stale files
+  for (const prevPageName of previousPageNames) {
+    if (!currentPageNamesSet.has(prevPageName)) {
+      // Load the deleted page to get its metadata for the change entry
+      let deletedPage;
+      if (isLegacyFormat) {
+        deletedPage = previous!.pages[prevPageName];
+      } else if (previousMeta) {
+        deletedPage = await loadPage(config.snapshotDir, fileKey, prevPageName);
+      }
+      const pageChanges = detectPageChanges(prevPageName, deletedPage ?? null, null);
+      for (const c of pageChanges) changes.push(c);
+      // Remove stale page snapshot file
+      await removePageSnapshot(config.snapshotDir, fileKey, prevPageName);
+    }
+  }
 
   // Fetch latest version ID if we didn't already attempt it
   if (!versionCheckAttempted) {
@@ -108,25 +186,32 @@ async function processFile(
   }
 
   // Preserve previous versionId if we couldn't obtain a new one
-  if (!latestVersionId && previous?.versionId) {
-    latestVersionId = previous.versionId;
+  if (!latestVersionId && (previousMeta?.versionId ?? previous?.versionId)) {
+    latestVersionId = previousMeta?.versionId ?? previous?.versionId;
   }
 
-  // Save current snapshot (with version ID)
-  await saveSnapshot(config.snapshotDir, fileKey, pages, latestVersionId);
+  // Save snapshot metadata
+  await saveSnapshotMeta(config.snapshotDir, fileKey, {
+    timestamp: new Date().toISOString(),
+    versionId: latestVersionId,
+    pageNames: [...currentPageNamesSet],
+  });
+
+  // Clean up legacy snapshot if it existed
+  if (isLegacyFormat) {
+    await removeLegacySnapshot(config.snapshotDir, fileKey);
+  }
+
   console.log("  Snapshot saved.");
 
-  // File name is captured from the shallow fetch inside adapter.fetchPages()
+  // File name is captured from the shallow fetch inside adapter.fetchPagesIter()
   const fileName = adapter.lastFileName;
   if (fileName) console.log(`  File name: ${fileName}`);
 
-  if (!previous) {
+  if (!hasPrevious) {
     console.log("  No previous snapshot found. First run — baseline saved.");
-    return { fileKey, changes: [], editors: [], baselineCreated: true, pageNames: Object.keys(pages), fileName };
+    return { fileKey, changes: [], editors: [], baselineCreated: true, pageNames: [...currentPageNamesSet], fileName };
   }
-
-  // Detect changes
-  const changes = detectChanges(previous.pages, pages);
 
   // Fetch editors since last snapshot only if there are changes
   let editors: FigmaUser[] = [];
@@ -134,7 +219,8 @@ async function processFile(
     try {
       console.log("  Fetching version history...");
       const versions = await adapter.fetchVersions(fileKey);
-      editors = adapter.extractEditorsSince(versions, previous.timestamp);
+      const previousTimestamp = previousMeta?.timestamp ?? previous?.timestamp ?? "";
+      editors = adapter.extractEditorsSince(versions, previousTimestamp);
       if (editors.length > 0) {
         console.log(`  Editors: ${editors.map((e) => e.handle).join(", ")}`);
       }

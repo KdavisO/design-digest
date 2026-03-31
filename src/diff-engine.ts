@@ -68,6 +68,169 @@ const PROPERTY_LABELS: Record<string, string> = {
   height: "高さ",
 };
 
+/**
+ * Detect changes for a single page.
+ * Compares oldPage vs newPage for the given pageName.
+ * Either or both of oldPage and newPage may be null/undefined.
+ * If both are null/undefined, an empty change list is returned.
+ */
+export function detectPageChanges(
+  pageName: string,
+  oldPage: FigmaNode | null | undefined,
+  newPage: FigmaNode | null | undefined,
+): ChangeEntry[] {
+  const changes: ChangeEntry[] = [];
+
+  if (!oldPage && newPage) {
+    changes.push({
+      pageName,
+      nodeId: newPage.id,
+      nodeName: newPage.name,
+      nodeType: newPage.type,
+      kind: "added",
+    });
+    return changes;
+  }
+
+  if (oldPage && !newPage) {
+    changes.push({
+      pageName,
+      nodeId: oldPage.id,
+      nodeName: oldPage.name,
+      nodeType: oldPage.type,
+      kind: "deleted",
+    });
+    return changes;
+  }
+
+  if (!oldPage || !newPage) return changes;
+
+  const oldNodes = flattenNodes(oldPage);
+  const newNodes = flattenNodes(newPage);
+
+  const matchedOldIds = new Set<string>();
+  const matchedNewIds = new Set<string>();
+
+  // Pass 1: Match nodes by same ID (existing or modified)
+  for (const nodeId of Object.keys(oldNodes)) {
+    if (newNodes[nodeId]) {
+      matchedOldIds.add(nodeId);
+      matchedNewIds.add(nodeId);
+
+      const oldNode = oldNodes[nodeId];
+      const newNode = newNodes[nodeId];
+
+      // Detect rename
+      if (oldNode.name !== newNode.name) {
+        changes.push({
+          pageName,
+          nodeId,
+          nodeName: newNode.name,
+          nodeType: newNode.type,
+          kind: "renamed",
+          property: "name",
+          oldValue: oldNode.name,
+          newValue: newNode.name,
+        });
+      }
+
+      const diffs = diff(oldNode, newNode);
+      if (!diffs) continue;
+
+      const isInstance = newNode.type === "INSTANCE";
+
+      for (const d of diffs) {
+        const property = diffPath(d);
+        if (property === "children" || property === "name") continue;
+
+        const isOverride = isInstance && isOverrideProperty(property);
+
+        changes.push({
+          pageName,
+          nodeId,
+          nodeName: newNode.name,
+          nodeType: newNode.type,
+          kind: "modified",
+          property,
+          oldValue: "lhs" in d ? d.lhs : undefined,
+          newValue: "rhs" in d ? d.rhs : undefined,
+          ...(isInstance ? { isOverride } : {}),
+        });
+      }
+    }
+  }
+
+  // Pass 2: Detect renames for nodes with changed IDs (same type + same name)
+  const unmatchedOld = Object.entries(oldNodes).filter(([id]) => !matchedOldIds.has(id));
+  const unmatchedNew = Object.entries(newNodes).filter(([id]) => !matchedNewIds.has(id));
+
+  for (const [oldId, oldNode] of unmatchedOld) {
+    const match = unmatchedNew.find(
+      ([newId, newNode]) =>
+        !matchedNewIds.has(newId) &&
+        newNode.type === oldNode.type &&
+        newNode.name === oldNode.name,
+    );
+
+    if (match) {
+      const [newId, newNode] = match;
+      matchedOldIds.add(oldId);
+      matchedNewIds.add(newId);
+
+      const diffs = diff(oldNode, newNode);
+      if (diffs) {
+        const isInstance = newNode.type === "INSTANCE";
+
+        for (const d of diffs) {
+          const property = diffPath(d);
+          if (property === "children" || property === "id") continue;
+
+          const isOverride = isInstance && isOverrideProperty(property);
+
+          changes.push({
+            pageName,
+            nodeId: newId,
+            nodeName: newNode.name,
+            nodeType: newNode.type,
+            kind: "modified",
+            property,
+            oldValue: "lhs" in d ? d.lhs : undefined,
+            newValue: "rhs" in d ? d.rhs : undefined,
+            ...(isInstance ? { isOverride } : {}),
+          });
+        }
+      }
+    }
+  }
+
+  // Pass 3: Remaining unmatched = truly added/deleted
+  for (const [id, node] of unmatchedOld) {
+    if (!matchedOldIds.has(id)) {
+      changes.push({
+        pageName,
+        nodeId: id,
+        nodeName: node.name,
+        nodeType: node.type,
+        kind: "deleted",
+      });
+    }
+  }
+
+  for (const [id, node] of unmatchedNew) {
+    if (!matchedNewIds.has(id)) {
+      changes.push({
+        pageName,
+        nodeId: id,
+        nodeName: node.name,
+        nodeType: node.type,
+        kind: "added",
+      });
+    }
+  }
+
+  return changes;
+}
+
 export function detectChanges(
   oldPages: Record<string, FigmaNode>,
   newPages: Record<string, FigmaNode>,
@@ -80,148 +243,7 @@ export function detectChanges(
   ]);
 
   for (const pageName of allPageNames) {
-    const oldPage = oldPages[pageName];
-    const newPage = newPages[pageName];
-
-    if (!oldPage && newPage) {
-      changes.push({
-        pageName,
-        nodeId: newPage.id,
-        nodeName: newPage.name,
-        nodeType: newPage.type,
-        kind: "added",
-      });
-      continue;
-    }
-
-    if (oldPage && !newPage) {
-      changes.push({
-        pageName,
-        nodeId: oldPage.id,
-        nodeName: oldPage.name,
-        nodeType: oldPage.type,
-        kind: "deleted",
-      });
-      continue;
-    }
-
-    const oldNodes = flattenNodes(oldPage);
-    const newNodes = flattenNodes(newPage);
-
-    const matchedOldIds = new Set<string>();
-    const matchedNewIds = new Set<string>();
-
-    // Pass 1: Match nodes by same ID (existing or modified)
-    for (const nodeId of Object.keys(oldNodes)) {
-      if (newNodes[nodeId]) {
-        matchedOldIds.add(nodeId);
-        matchedNewIds.add(nodeId);
-
-        const oldNode = oldNodes[nodeId];
-        const newNode = newNodes[nodeId];
-
-        // Detect rename
-        if (oldNode.name !== newNode.name) {
-          changes.push({
-            pageName,
-            nodeId,
-            nodeName: newNode.name,
-            nodeType: newNode.type,
-            kind: "renamed",
-            property: "name",
-            oldValue: oldNode.name,
-            newValue: newNode.name,
-          });
-        }
-
-        const diffs = diff(oldNode, newNode);
-        if (!diffs) continue;
-
-        const isInstance = newNode.type === "INSTANCE";
-
-        for (const d of diffs) {
-          const property = diffPath(d);
-          if (property === "children" || property === "name") continue;
-
-          const isOverride = isInstance && isOverrideProperty(property);
-
-          changes.push({
-            pageName,
-            nodeId,
-            nodeName: newNode.name,
-            nodeType: newNode.type,
-            kind: "modified",
-            property,
-            oldValue: "lhs" in d ? d.lhs : undefined,
-            newValue: "rhs" in d ? d.rhs : undefined,
-            ...(isInstance ? { isOverride } : {}),
-          });
-        }
-      }
-    }
-
-    // Pass 2: Detect renames for nodes with changed IDs (same type + same parent structure)
-    const unmatchedOld = Object.entries(oldNodes).filter(([id]) => !matchedOldIds.has(id));
-    const unmatchedNew = Object.entries(newNodes).filter(([id]) => !matchedNewIds.has(id));
-
-    for (const [oldId, oldNode] of unmatchedOld) {
-      const match = unmatchedNew.find(
-        ([newId, newNode]) =>
-          !matchedNewIds.has(newId) &&
-          newNode.type === oldNode.type &&
-          newNode.name === oldNode.name,
-      );
-
-      if (match) {
-        const [newId, newNode] = match;
-        matchedOldIds.add(oldId);
-        matchedNewIds.add(newId);
-
-        const diffs = diff(oldNode, newNode);
-        if (diffs) {
-          for (const d of diffs) {
-            const property = diffPath(d);
-            if (property === "children" || property === "id") continue;
-
-            changes.push({
-              pageName,
-              nodeId: newId,
-              nodeName: newNode.name,
-              nodeType: newNode.type,
-              kind: "modified",
-              property,
-              oldValue: "lhs" in d ? d.lhs : undefined,
-              newValue: "rhs" in d ? d.rhs : undefined,
-            });
-          }
-        }
-      }
-    }
-
-    // Pass 3: Remaining unmatched = truly added/deleted
-    for (const [id, node] of unmatchedOld) {
-      if (!matchedOldIds.has(id)) {
-        changes.push({
-          pageName,
-          nodeId: id,
-          nodeName: node.name,
-          nodeType: node.type,
-          kind: "deleted",
-        });
-      }
-    }
-
-    for (const [id, node] of unmatchedNew) {
-      if (!matchedNewIds.has(id)) {
-        changes.push({
-          pageName,
-          nodeId: id,
-          nodeName: node.name,
-          nodeType: node.type,
-          kind: "added",
-        });
-      }
-    }
+    changes.push(...detectPageChanges(pageName, oldPages[pageName], newPages[pageName]));
   }
 
   return changes;
@@ -573,14 +595,17 @@ function formatBlockKitChange(fileKey: string, change: ChangeEntry): string {
   }
 }
 
-function flattenNodes(node: FigmaNode): Record<string, FigmaNode> {
+function flattenNodes(root: FigmaNode): Record<string, FigmaNode> {
   const result: Record<string, FigmaNode> = {};
-  const { children, ...rest } = node;
-  result[node.id] = rest as FigmaNode;
-
-  if (children) {
-    for (const child of children) {
-      Object.assign(result, flattenNodes(child));
+  const queue: FigmaNode[] = [root];
+  while (queue.length > 0) {
+    const node = queue.pop()!;
+    const { children, ...rest } = node;
+    result[node.id] = rest as FigmaNode;
+    if (children) {
+      for (const child of children) {
+        queue.push(child);
+      }
     }
   }
   return result;
