@@ -56,7 +56,13 @@ export async function loadSnapshot(
     const pages: Record<string, FigmaNode> = Object.create(null);
     for (const pageName of meta.pageNames) {
       const page = await loadPage(dir, fileKey, pageName);
-      if (page) pages[pageName] = page;
+      if (!page) {
+        console.warn(
+          `  Snapshot for fileKey "${fileKey}" is missing page "${pageName}". Treating snapshot as invalid.`,
+        );
+        return null;
+      }
+      pages[pageName] = page;
     }
     return {
       timestamp: meta.timestamp,
@@ -83,8 +89,14 @@ export async function loadSnapshotMeta(
 ): Promise<SnapshotMeta | null> {
   const path = metaPath(dir, fileKey);
   if (!existsSync(path)) return null;
-  const raw = await readFile(path, "utf-8");
-  return JSON.parse(raw) as SnapshotMeta;
+  try {
+    const raw = await readFile(path, "utf-8");
+    return JSON.parse(raw) as SnapshotMeta;
+  } catch (err) {
+    console.warn(`  Failed to load snapshot meta at ${path}, treating as missing:`, err);
+    await rm(path, { force: true }).catch(() => {});
+    return null;
+  }
 }
 
 /**
@@ -97,8 +109,13 @@ export async function loadPage(
 ): Promise<FigmaNode | null> {
   const path = pageFilePath(dir, fileKey, pageName);
   if (!existsSync(path)) return null;
-  const raw = await readFile(path, "utf-8");
-  return JSON.parse(raw) as FigmaNode;
+  try {
+    const raw = await readFile(path, "utf-8");
+    return JSON.parse(raw) as FigmaNode;
+  } catch (err) {
+    console.warn(`  Failed to load page snapshot "${pageName}":`, err);
+    return null;
+  }
 }
 
 /**
