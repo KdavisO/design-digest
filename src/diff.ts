@@ -6,11 +6,9 @@ import {
   loadSnapshot,
   loadSnapshotMeta,
   loadPage,
-  saveSnapshotMeta,
-  savePage,
-  removePageSnapshot,
   removeLegacySnapshot,
   validateSnapshotPages,
+  StagedSnapshotWriter,
 } from "./snapshot.js";
 import {
   detectPageChanges,
@@ -56,6 +54,9 @@ async function processFile(
   config: Config,
   fileKey: string,
 ): Promise<{ fileKey: string; changes: ChangeEntry[]; editors: FigmaUser[]; baselineCreated: boolean; pageNames?: string[]; fileName?: string }> {
+  // Recover from any partial staging operation (e.g. previous crash)
+  await StagedSnapshotWriter.recover(config.snapshotDir, fileKey);
+
   // Load previous snapshot metadata (lightweight — no page data)
   const previousMeta = await loadSnapshotMeta(config.snapshotDir, fileKey);
   // Fall back to legacy single-file snapshot if per-page format not found
@@ -152,74 +153,84 @@ async function processFile(
   const currentPageNamesSet = new Set<string>();
   let pageCount = 0;
 
-  // Stream pages one at a time
-  for await (const { pageName, node } of adapter.fetchPagesIter(fileKey, fetchOptions)) {
-    pageCount++;
-    currentPageNamesSet.add(pageName);
+  // Use staged writer for atomic multi-page updates.
+  // Pages are written to a staging directory, then atomically swapped
+  // into the live directory on commit — preventing inconsistent snapshots
+  // if the process crashes mid-write.
+  const writer = new StagedSnapshotWriter(config.snapshotDir, fileKey);
 
-    // Diff against previous page BEFORE saving (same path is used for per-page storage)
-    if (hasPrevious) {
-      // Skip diff for pages whose snapshot file is missing to avoid false-positive "added"
-      if (!missingPages.has(pageName)) {
-        let previousPage: FigmaNode | null = null;
-        if (isLegacyFormat) {
-          previousPage = previous!.pages[pageName] ?? null;
-        } else if (previousMeta) {
-          previousPage = await loadPage(config.snapshotDir, fileKey, pageName);
+  try {
+    // Stream pages one at a time (reads from live dir, writes to staging)
+    for await (const { pageName, node } of adapter.fetchPagesIter(fileKey, fetchOptions)) {
+      pageCount++;
+      currentPageNamesSet.add(pageName);
+
+      // Diff against previous page (reads from live dir — unchanged until commit)
+      if (hasPrevious) {
+        // Skip diff for pages whose snapshot file is missing to avoid false-positive "added"
+        if (!missingPages.has(pageName)) {
+          let previousPage: FigmaNode | null = null;
+          if (isLegacyFormat) {
+            previousPage = previous!.pages[pageName] ?? null;
+          } else if (previousMeta) {
+            previousPage = await loadPage(config.snapshotDir, fileKey, pageName);
+          }
+
+          const pageChanges = detectPageChanges(pageName, previousPage, node);
+          for (const c of pageChanges) changes.push(c);
         }
+      }
 
-        const pageChanges = detectPageChanges(pageName, previousPage, node);
+      // Save current page to staging directory
+      await writer.savePage(pageName, node);
+      // node goes out of scope after this iteration, GC can collect
+    }
+
+    console.log(`  Fetched ${pageCount} page(s)`);
+
+    // Detect deleted pages (in previous but not in current).
+    // Stale page files are cleaned up automatically by the staging directory swap.
+    for (const prevPageName of previousPageNames) {
+      if (!currentPageNamesSet.has(prevPageName)) {
+        // Load the deleted page to get its metadata for the change entry.
+        // Note: if the page file is missing (in missingPages), loadPage returns null
+        // and detectPageChanges(name, null, null) safely returns [] — no special handling needed.
+        let deletedPage: FigmaNode | null = null;
+        if (isLegacyFormat) {
+          deletedPage = previous!.pages[prevPageName] ?? null;
+        } else if (previousMeta) {
+          deletedPage = await loadPage(config.snapshotDir, fileKey, prevPageName);
+        }
+        const pageChanges = detectPageChanges(prevPageName, deletedPage, null);
         for (const c of pageChanges) changes.push(c);
       }
     }
 
-    // Save current page (overwrites previous page file)
-    await savePage(config.snapshotDir, fileKey, pageName, node);
-    // node goes out of scope after this iteration, GC can collect
-  }
-
-  console.log(`  Fetched ${pageCount} page(s)`);
-
-  // Detect deleted pages (in previous but not in current) and clean up stale files
-  for (const prevPageName of previousPageNames) {
-    if (!currentPageNamesSet.has(prevPageName)) {
-      // Load the deleted page to get its metadata for the change entry
-      // Note: if the page file is missing (in missingPages), loadPage returns null
-      // and detectPageChanges(name, null, null) safely returns [] — no special handling needed.
-      let deletedPage: FigmaNode | null = null;
-      if (isLegacyFormat) {
-        deletedPage = previous!.pages[prevPageName] ?? null;
-      } else if (previousMeta) {
-        deletedPage = await loadPage(config.snapshotDir, fileKey, prevPageName);
+    // Fetch latest version ID if we didn't already attempt it
+    if (!versionCheckAttempted) {
+      try {
+        const versions = await adapter.fetchVersions(fileKey);
+        if (versions.length > 0) latestVersionId = versions[0].id;
+      } catch {
+        // Non-critical — version ID is optional for snapshot
       }
-      const pageChanges = detectPageChanges(prevPageName, deletedPage, null);
-      for (const c of pageChanges) changes.push(c);
-      // Remove stale page snapshot file
-      await removePageSnapshot(config.snapshotDir, fileKey, prevPageName);
     }
-  }
 
-  // Fetch latest version ID if we didn't already attempt it
-  if (!versionCheckAttempted) {
-    try {
-      const versions = await adapter.fetchVersions(fileKey);
-      if (versions.length > 0) latestVersionId = versions[0].id;
-    } catch {
-      // Non-critical — version ID is optional for snapshot
+    // Preserve previous versionId if we couldn't obtain a new one
+    if (!latestVersionId && (previousMeta?.versionId ?? previous?.versionId)) {
+      latestVersionId = previousMeta?.versionId ?? previous?.versionId;
     }
-  }
 
-  // Preserve previous versionId if we couldn't obtain a new one
-  if (!latestVersionId && (previousMeta?.versionId ?? previous?.versionId)) {
-    latestVersionId = previousMeta?.versionId ?? previous?.versionId;
+    // Atomically commit staged pages + metadata (swap staging → live)
+    await writer.commit({
+      timestamp: new Date().toISOString(),
+      versionId: latestVersionId,
+      pageNames: [...currentPageNamesSet],
+    });
+  } catch (err) {
+    await writer.abort();
+    throw err;
   }
-
-  // Save snapshot metadata
-  await saveSnapshotMeta(config.snapshotDir, fileKey, {
-    timestamp: new Date().toISOString(),
-    versionId: latestVersionId,
-    pageNames: [...currentPageNamesSet],
-  });
 
   // Clean up legacy snapshot if it existed
   if (isLegacyFormat) {
