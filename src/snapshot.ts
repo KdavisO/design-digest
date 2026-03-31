@@ -316,9 +316,22 @@ export async function saveSnapshot(
   const timestamp = new Date().toISOString();
   const pageNames = Object.keys(pages);
 
+  // Load previous meta to detect stale pages
+  const previousMeta = await loadSnapshotMeta(dir, fileKey);
+
   await saveSnapshotMeta(dir, fileKey, { timestamp, versionId, pageNames });
   for (const [pageName, node] of Object.entries(pages)) {
     await savePage(dir, fileKey, pageName, node);
+  }
+
+  // Remove stale page files from previous snapshot
+  if (previousMeta) {
+    const currentPageSet = new Set(pageNames);
+    for (const prevPage of previousMeta.pageNames) {
+      if (!currentPageSet.has(prevPage)) {
+        await removePageSnapshot(dir, fileKey, prevPage);
+      }
+    }
   }
 
   // Clean up legacy file if it exists
