@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtemp, rm, writeFile, mkdir } from "node:fs/promises";
+import { mkdtemp, rm, writeFile, mkdir, truncate } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -269,10 +269,7 @@ describe("legacy snapshot size guard", () => {
     await rm(tmpDir, { recursive: true, force: true });
   });
 
-  it("loadSnapshot skips and renames oversized legacy file", async () => {
-    // Create a legacy snapshot file that exceeds the threshold
-    // We'll mock by writing a small file, then temporarily lower the threshold
-    // Instead, we test the rename behavior by creating a file and checking .oversized
+  it("loadSnapshot loads small legacy file normally", async () => {
     const legacyPath = join(tmpDir, `${fileKey}.json`);
     const snapshot = {
       timestamp: "2026-01-01T00:00:00Z",
@@ -281,7 +278,6 @@ describe("legacy snapshot size guard", () => {
     };
     await writeFile(legacyPath, JSON.stringify(snapshot));
 
-    // File is small, so it should load fine
     const loaded = await loadSnapshot(tmpDir, fileKey);
     expect(loaded).not.toBeNull();
     expect(loaded!.fileKey).toBe(fileKey);
@@ -311,19 +307,31 @@ describe("legacy snapshot size guard", () => {
     expect(LEGACY_SNAPSHOT_MAX_BYTES).toBe(500 * 1024 * 1024);
   });
 
-  it("loadSnapshot renames oversized legacy file aside", async () => {
-    // Create a legacy file and check that .oversized rename works
-    // by testing with a real oversized detection scenario
+  it("loadSnapshot returns null and renames oversized legacy file", async () => {
     const legacyPath = join(tmpDir, `${fileKey}.json`);
     const oversizedPath = `${legacyPath}.oversized`;
-    await writeFile(legacyPath, JSON.stringify({ fileKey, timestamp: "t", pages: {} }));
+    // Create a sparse file exceeding the threshold
+    await writeFile(legacyPath, "");
+    await truncate(legacyPath, LEGACY_SNAPSHOT_MAX_BYTES + 1);
 
-    // Verify the file exists before loading
     expect(existsSync(legacyPath)).toBe(true);
 
-    // The file is small so it won't be renamed — verify normal load
     const loaded = await loadSnapshot(tmpDir, fileKey);
-    expect(loaded).not.toBeNull();
-    expect(existsSync(oversizedPath)).toBe(false);
+    expect(loaded).toBeNull();
+    expect(existsSync(legacyPath)).toBe(false);
+    expect(existsSync(oversizedPath)).toBe(true);
+  });
+
+  it("loadPageFromLegacy returns null for oversized legacy file", async () => {
+    const legacyPath = join(tmpDir, `${fileKey}.json`);
+    const oversizedPath = `${legacyPath}.oversized`;
+    await writeFile(legacyPath, "");
+    await truncate(legacyPath, LEGACY_SNAPSHOT_MAX_BYTES + 1);
+
+    const result = await loadPageFromLegacy(tmpDir, fileKey, "Page 1");
+    expect(result.page).toBeNull();
+    expect(result.meta).toBeNull();
+    expect(existsSync(legacyPath)).toBe(false);
+    expect(existsSync(oversizedPath)).toBe(true);
   });
 });

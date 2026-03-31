@@ -34,16 +34,30 @@ async function checkLegacyFileSize(path: string): Promise<boolean> {
     if (st.size > LEGACY_SNAPSHOT_MAX_BYTES) {
       const mb = (st.size / (1024 * 1024)).toFixed(1);
       const limitMb = (LEGACY_SNAPSHOT_MAX_BYTES / (1024 * 1024)).toFixed(0);
-      const aside = `${path}.oversized`;
+      let aside = `${path}.oversized`;
       console.warn(
         `  Legacy snapshot ${path} is ${mb} MB (limit: ${limitMb} MB). Renaming to ${aside} to prevent OOM.`,
       );
-      await rename(path, aside);
+      try {
+        await rename(path, aside);
+      } catch {
+        // Destination may already exist; try with timestamp suffix
+        aside = `${path}.oversized.${Date.now()}`;
+        try {
+          await rename(path, aside);
+        } catch (renameErr) {
+          console.warn(`  Failed to rename oversized legacy snapshot ${path}:`, renameErr);
+        }
+      }
       return false;
     }
     return true;
-  } catch {
-    // stat failed — file may have been removed between existsSync and here
+  } catch (err) {
+    const error = err as NodeJS.ErrnoException;
+    if (error?.code === "ENOENT") {
+      return false;
+    }
+    console.warn(`  Failed to check legacy snapshot file size for ${path}:`, error);
     return false;
   }
 }
