@@ -358,7 +358,7 @@ describe("validateSnapshotPages", () => {
     });
 
     const meta = await loadSnapshotMeta(tmpDir, fileKey);
-    const missing = await validateSnapshotPages(tmpDir, fileKey, meta!);
+    const missing = validateSnapshotPages(tmpDir, fileKey, meta!);
     expect(missing.size).toBe(0);
   });
 
@@ -371,7 +371,7 @@ describe("validateSnapshotPages", () => {
     });
 
     const meta = await loadSnapshotMeta(tmpDir, fileKey);
-    const missing = await validateSnapshotPages(tmpDir, fileKey, meta!);
+    const missing = validateSnapshotPages(tmpDir, fileKey, meta!);
     expect(missing.size).toBe(1);
     expect(missing.has("Page B")).toBe(true);
   });
@@ -389,7 +389,7 @@ describe("validateSnapshotPages", () => {
     });
 
     const meta = await loadSnapshotMeta(tmpDir, fileKey);
-    const missing = await validateSnapshotPages(tmpDir, fileKey, meta!);
+    const missing = validateSnapshotPages(tmpDir, fileKey, meta!);
     expect(missing.size).toBe(0);
   });
 
@@ -401,7 +401,7 @@ describe("validateSnapshotPages", () => {
     });
 
     const meta = await loadSnapshotMeta(tmpDir, fileKey);
-    const missing = await validateSnapshotPages(tmpDir, fileKey, meta!);
+    const missing = validateSnapshotPages(tmpDir, fileKey, meta!);
     expect(missing.size).toBe(3);
   });
 });

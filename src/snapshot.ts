@@ -166,11 +166,11 @@ function isValidSnapshotMeta(data: unknown): data is SnapshotMeta {
  * Validate that all page files listed in a SnapshotMeta actually exist on disk.
  * Returns the set of page names whose files are missing.
  */
-export async function validateSnapshotPages(
+export function validateSnapshotPages(
   dir: string,
   fileKey: string,
   meta: SnapshotMeta,
-): Promise<Set<string>> {
+): Set<string> {
   const missing = new Set<string>();
   for (const pageName of meta.pageNames) {
     const path = pageFilePath(dir, fileKey, pageName);

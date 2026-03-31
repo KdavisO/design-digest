@@ -81,7 +81,7 @@ async function processFile(
   // Validate page file integrity for per-page format
   let missingPages = new Set<string>();
   if (previousMeta) {
-    missingPages = await validateSnapshotPages(config.snapshotDir, fileKey, previousMeta);
+    missingPages = validateSnapshotPages(config.snapshotDir, fileKey, previousMeta);
     if (missingPages.size > 0) {
       console.warn(
         `  ⚠️ Snapshot for fileKey "${fileKey}" has ${missingPages.size} missing page file(s): ${[...missingPages].join(", ")}`,
@@ -183,13 +183,9 @@ async function processFile(
   // Detect deleted pages (in previous but not in current) and clean up stale files
   for (const prevPageName of previousPageNames) {
     if (!currentPageNamesSet.has(prevPageName)) {
-      // Skip diff for pages whose snapshot file is missing to avoid false-positive "deleted"
-      if (missingPages.has(prevPageName)) {
-        // Clean up any stale snapshot file on disk but don't report as deleted
-        await removePageSnapshot(config.snapshotDir, fileKey, prevPageName);
-        continue;
-      }
       // Load the deleted page to get its metadata for the change entry
+      // Note: if the page file is missing (in missingPages), loadPage returns null
+      // and detectPageChanges(name, null, null) safely returns [] — no special handling needed.
       let deletedPage;
       if (isLegacyFormat) {
         deletedPage = previous!.pages[prevPageName];
