@@ -60,7 +60,22 @@ async function processFile(
   // Fall back to legacy single-file snapshot if per-page format not found
   let previous: Awaited<ReturnType<typeof loadSnapshot>> | null = null;
   if (!previousMeta) {
-    previous = await loadSnapshot(config.snapshotDir, fileKey);
+    try {
+      previous = await loadSnapshot(config.snapshotDir, fileKey);
+    } catch (err) {
+      console.warn(
+        "  Failed to load legacy snapshot, treating as no previous snapshot:",
+        err,
+      );
+      try {
+        await removeLegacySnapshot(config.snapshotDir, fileKey);
+      } catch (removeErr) {
+        console.warn(
+          "  Also failed to remove legacy snapshot file:",
+          removeErr,
+        );
+      }
+    }
   }
   const hasPrevious = previousMeta !== null || previous !== null;
   const previousVersionId = previousMeta?.versionId ?? previous?.versionId;
