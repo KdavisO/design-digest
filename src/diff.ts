@@ -113,8 +113,9 @@ async function processFile(
       }
       if (!versionCheck.changed && missingPages.size > 0) {
         console.log("  No version change detected, but missing pages need repair — fetching to heal snapshot.");
+      } else if (versionCheck.changed) {
+        console.log("  Version changed — fetching current state.");
       }
-      console.log("  Version changed — fetching current state.");
     } catch (err) {
       console.warn("  Version check failed, falling back to full fetch:", err);
     }
