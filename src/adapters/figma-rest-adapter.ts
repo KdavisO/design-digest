@@ -142,6 +142,85 @@ export class FigmaRestAdapter implements FigmaDataAdapter {
     return extractEditorsSinceFn(versions, sinceTimestamp);
   }
 
+  /**
+   * Streaming version of fetchByPages — yields sanitized pages one at a time.
+   * Peak memory = largest single page (not sum of all pages).
+   */
+  async *fetchPagesIter(
+    fileKey: string,
+    options?: FetchPagesOptions,
+  ): AsyncGenerator<{ pageName: string; node: FigmaNode }, void, undefined> {
+    this.lastFileName = undefined;
+
+    const watchPages = options?.watchPages ?? [];
+    const watchNodeIds = options?.watchNodeIds ?? [];
+    const depth = options?.depth;
+    const batchSize = options?.batchSize ?? DEFAULT_BATCH_SIZE;
+
+    if (watchNodeIds.length > 0) {
+      // Node-based path: not streamable, yield all at once
+      const pages = await this.fetchByNodeIds(fileKey, watchNodeIds, depth, batchSize);
+      try {
+        const file = await fetchFile(this.token, fileKey, 1);
+        this.lastFileName = file.name;
+      } catch {
+        // Non-critical
+      }
+      for (const [pageName, node] of Object.entries(pages)) {
+        yield { pageName, node };
+      }
+      return;
+    }
+
+    // Use the async generator to stream pages
+    try {
+      const iter = fetchFileProactiveIter(
+        this.token,
+        fileKey,
+        watchPages,
+        depth,
+        batchSize,
+      );
+
+      const metaResult = await iter.next();
+      if (metaResult.done || !metaResult.value || metaResult.value.kind !== "meta") {
+        throw new Error("Expected initial metadata from fetchFileProactiveIter");
+      }
+      this.lastFileName = metaResult.value.fileName;
+
+      for await (const entry of iter) {
+        if (entry.kind !== "page") continue;
+        yield { pageName: entry.pageName, node: sanitizeNode(entry.node) };
+      }
+    } catch (err) {
+      if (isPayloadTooLargeError(err)) {
+        console.log("  Payload too large — fetching page list and chunking...");
+        const file = await fetchFile(this.token, fileKey, 1);
+        this.lastFileName = file.name;
+        const targetPages = filterWatchTargets(file, watchPages);
+        const pageIds = targetPages.map((p) => p.id);
+        const precomputedShallow: Record<string, FigmaNode> = {};
+        for (const page of targetPages) {
+          precomputedShallow[page.id] = page;
+        }
+        const nodes = await fetchNodesChunked(
+          this.token,
+          fileKey,
+          pageIds,
+          depth,
+          batchSize,
+          precomputedShallow,
+        );
+        const sanitized = sanitizeRecordByName(nodes);
+        for (const [pageName, node] of Object.entries(sanitized)) {
+          yield { pageName, node };
+        }
+      } else {
+        throw err;
+      }
+    }
+  }
+
   private async fetchByPages(
     fileKey: string,
     watchPages: string[],
