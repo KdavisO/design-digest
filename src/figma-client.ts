@@ -29,8 +29,8 @@ export interface FigmaUser {
 export interface FigmaVersion {
   id: string;
   created_at: string;
-  label: string;
-  description: string;
+  label: string | null;
+  description: string | null;
   user: FigmaUser;
 }
 

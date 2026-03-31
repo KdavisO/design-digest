@@ -46,8 +46,8 @@ export const figmaUserSchema: z.ZodType<FigmaUser> = z.object({
 export const figmaVersionSchema: z.ZodType<FigmaVersion> = z.object({
   id: z.string(),
   created_at: z.string(),
-  label: z.string(),
-  description: z.string(),
+  label: z.string().nullable(),
+  description: z.string().nullable(),
   user: figmaUserSchema,
 }).passthrough();
 

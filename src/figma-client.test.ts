@@ -944,6 +944,30 @@ describe("API response schema validation", () => {
     );
   });
 
+  it("accepts fetchVersions response with null label and description", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          versions: [
+            {
+              id: "v1",
+              created_at: "2024-01-01",
+              label: null,
+              description: null,
+              user: { handle: "User", img_url: "https://img", id: "u1" },
+            },
+          ],
+        }),
+        { status: 200 },
+      ),
+    );
+
+    const versions = await fetchVersions("token", "fileKey");
+    expect(versions).toHaveLength(1);
+    expect(versions[0].label).toBeNull();
+    expect(versions[0].description).toBeNull();
+  });
+
   it("rejects fetchNodes response with invalid node structure", async () => {
     // nodes["1:0"].document is missing 'id' field
     vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
