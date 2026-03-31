@@ -303,7 +303,7 @@ describe("legacy snapshot size guard", () => {
     expect(loaded).toBeNull();
   });
 
-  it("LEGACY_SNAPSHOT_MAX_BYTES is 500 MB", () => {
+  it("LEGACY_SNAPSHOT_MAX_BYTES is 500 MiB", () => {
     expect(LEGACY_SNAPSHOT_MAX_BYTES).toBe(500 * 1024 * 1024);
   });
 

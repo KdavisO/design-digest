@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { createHash } from "node:crypto";
 import type { FigmaNode } from "./figma-client.js";
 
-/** Maximum legacy snapshot file size in bytes (500 MB). Files exceeding this are renamed aside to prevent OOM. */
+/** Maximum legacy snapshot file size in bytes (500 MiB). Files exceeding this are renamed aside to prevent OOM. */
 export const LEGACY_SNAPSHOT_MAX_BYTES = 500 * 1024 * 1024;
 
 export interface Snapshot {
@@ -32,22 +32,20 @@ async function checkLegacyFileSize(path: string): Promise<boolean> {
   try {
     const st = await stat(path);
     if (st.size > LEGACY_SNAPSHOT_MAX_BYTES) {
-      const mb = (st.size / (1024 * 1024)).toFixed(1);
-      const limitMb = (LEGACY_SNAPSHOT_MAX_BYTES / (1024 * 1024)).toFixed(0);
-      let aside = `${path}.oversized`;
+      const mib = (st.size / (1024 * 1024)).toFixed(1);
+      const limitMib = (LEGACY_SNAPSHOT_MAX_BYTES / (1024 * 1024)).toFixed(0);
+      const asideBase = `${path}.oversized`;
+      let aside = asideBase;
+      if (existsSync(aside)) {
+        aside = `${asideBase}.${Date.now()}`;
+      }
       console.warn(
-        `  Legacy snapshot ${path} is ${mb} MB (limit: ${limitMb} MB). Renaming to ${aside} to prevent OOM.`,
+        `  Legacy snapshot ${path} is ${mib} MiB (limit: ${limitMib} MiB). Renaming to ${aside} to prevent OOM.`,
       );
       try {
         await rename(path, aside);
-      } catch {
-        // Destination may already exist; try with timestamp suffix
-        aside = `${path}.oversized.${Date.now()}`;
-        try {
-          await rename(path, aside);
-        } catch (renameErr) {
-          console.warn(`  Failed to rename oversized legacy snapshot ${path}:`, renameErr);
-        }
+      } catch (renameErr) {
+        console.warn(`  Failed to rename oversized legacy snapshot ${path}:`, renameErr);
       }
       return false;
     }
