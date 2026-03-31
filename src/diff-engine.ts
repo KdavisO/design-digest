@@ -71,7 +71,8 @@ const PROPERTY_LABELS: Record<string, string> = {
 /**
  * Detect changes for a single page.
  * Compares oldPage vs newPage for the given pageName.
- * Either oldPage or newPage (but not both) may be null/undefined.
+ * Either or both of oldPage and newPage may be null/undefined.
+ * If both are null/undefined, an empty change list is returned.
  */
 export function detectPageChanges(
   pageName: string,

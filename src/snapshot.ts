@@ -138,15 +138,24 @@ export async function loadPageFromLegacy(
 ): Promise<{ page: FigmaNode | null; meta: SnapshotMeta | null }> {
   const legacyPath = legacySnapshotPath(dir, fileKey);
   if (!existsSync(legacyPath)) return { page: null, meta: null };
-  const raw = await readFile(legacyPath, "utf-8");
-  const snapshot = JSON.parse(raw) as Snapshot;
-  const meta: SnapshotMeta = {
-    timestamp: snapshot.timestamp,
-    fileKey: snapshot.fileKey,
-    versionId: snapshot.versionId,
-    pageNames: Object.keys(snapshot.pages),
-  };
-  return { page: snapshot.pages[pageName] ?? null, meta };
+  try {
+    const raw = await readFile(legacyPath, "utf-8");
+    const snapshot = JSON.parse(raw) as Snapshot;
+    const meta: SnapshotMeta = {
+      timestamp: snapshot.timestamp,
+      fileKey: snapshot.fileKey,
+      versionId: snapshot.versionId,
+      pageNames: Object.keys(snapshot.pages),
+    };
+    return { page: snapshot.pages[pageName] ?? null, meta };
+  } catch (err) {
+    console.warn(
+      `  Failed to load legacy snapshot for file "${fileKey}", page "${pageName}":`,
+      err,
+    );
+    await rm(legacyPath, { force: true }).catch(() => {});
+    return { page: null, meta: null };
+  }
 }
 
 /**
