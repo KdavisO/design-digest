@@ -76,8 +76,17 @@ export async function loadSnapshot(
   const legacyPath = legacySnapshotPath(dir, fileKey);
   if (!existsSync(legacyPath)) return null;
 
-  const raw = await readFile(legacyPath, "utf-8");
-  return JSON.parse(raw) as Snapshot;
+  try {
+    const raw = await readFile(legacyPath, "utf-8");
+    return JSON.parse(raw) as Snapshot;
+  } catch (err) {
+    console.warn(
+      `  Failed to load legacy snapshot at ${legacyPath}, treating as missing:`,
+      err,
+    );
+    await rm(legacyPath, { force: true }).catch(() => {});
+    return null;
+  }
 }
 
 /**
