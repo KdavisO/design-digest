@@ -1,7 +1,7 @@
 import "dotenv/config";
 import { loadConfig } from "./config.js";
 import { FigmaRestAdapter } from "./adapters/figma-rest-adapter.js";
-import type { FigmaUser } from "./figma-client.js";
+import type { FigmaUser, FigmaNode } from "./figma-client.js";
 import {
   loadSnapshot,
   loadSnapshotMeta,
@@ -10,6 +10,7 @@ import {
   savePage,
   removePageSnapshot,
   removeLegacySnapshot,
+  validateSnapshotPages,
 } from "./snapshot.js";
 import {
   detectPageChanges,
@@ -77,6 +78,20 @@ async function processFile(
       }
     }
   }
+  // Validate page file integrity for per-page format
+  let missingPages = new Set<string>();
+  if (previousMeta) {
+    missingPages = validateSnapshotPages(config.snapshotDir, fileKey, previousMeta);
+    if (missingPages.size > 0) {
+      console.warn(
+        `  ⚠️ Snapshot for fileKey "${fileKey}" has ${missingPages.size} missing page file(s): ${[...missingPages].join(", ")}`,
+      );
+      console.warn(
+        "  Missing pages will be skipped in diff to avoid false-positive detections.",
+      );
+    }
+  }
+
   const hasPrevious = previousMeta !== null || previous !== null;
   const previousVersionId = previousMeta?.versionId ?? previous?.versionId;
 
@@ -92,11 +107,15 @@ async function processFile(
       );
       versionCheckAttempted = true;
       latestVersionId = versionCheck.latestVersionId;
-      if (!versionCheck.changed) {
+      if (!versionCheck.changed && missingPages.size === 0) {
         console.log("  No version change detected — skipping snapshot comparison.");
         return { fileKey, changes: [], editors: [], baselineCreated: false };
       }
-      console.log("  Version changed — fetching current state.");
+      if (!versionCheck.changed && missingPages.size > 0) {
+        console.log("  No version change detected, but missing pages need repair — fetching to heal snapshot.");
+      } else if (versionCheck.changed) {
+        console.log("  Version changed — fetching current state.");
+      }
     } catch (err) {
       console.warn("  Version check failed, falling back to full fetch:", err);
     }
@@ -140,15 +159,18 @@ async function processFile(
 
     // Diff against previous page BEFORE saving (same path is used for per-page storage)
     if (hasPrevious) {
-      let previousPage;
-      if (isLegacyFormat) {
-        previousPage = previous!.pages[pageName] ?? null;
-      } else if (previousMeta) {
-        previousPage = await loadPage(config.snapshotDir, fileKey, pageName);
-      }
+      // Skip diff for pages whose snapshot file is missing to avoid false-positive "added"
+      if (!missingPages.has(pageName)) {
+        let previousPage: FigmaNode | null = null;
+        if (isLegacyFormat) {
+          previousPage = previous!.pages[pageName] ?? null;
+        } else if (previousMeta) {
+          previousPage = await loadPage(config.snapshotDir, fileKey, pageName);
+        }
 
-      const pageChanges = detectPageChanges(pageName, previousPage ?? null, node);
-      for (const c of pageChanges) changes.push(c);
+        const pageChanges = detectPageChanges(pageName, previousPage, node);
+        for (const c of pageChanges) changes.push(c);
+      }
     }
 
     // Save current page (overwrites previous page file)
@@ -162,13 +184,15 @@ async function processFile(
   for (const prevPageName of previousPageNames) {
     if (!currentPageNamesSet.has(prevPageName)) {
       // Load the deleted page to get its metadata for the change entry
-      let deletedPage;
+      // Note: if the page file is missing (in missingPages), loadPage returns null
+      // and detectPageChanges(name, null, null) safely returns [] — no special handling needed.
+      let deletedPage: FigmaNode | null = null;
       if (isLegacyFormat) {
-        deletedPage = previous!.pages[prevPageName];
+        deletedPage = previous!.pages[prevPageName] ?? null;
       } else if (previousMeta) {
         deletedPage = await loadPage(config.snapshotDir, fileKey, prevPageName);
       }
-      const pageChanges = detectPageChanges(prevPageName, deletedPage ?? null, null);
+      const pageChanges = detectPageChanges(prevPageName, deletedPage, null);
       for (const c of pageChanges) changes.push(c);
       // Remove stale page snapshot file
       await removePageSnapshot(config.snapshotDir, fileKey, prevPageName);
