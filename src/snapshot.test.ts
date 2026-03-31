@@ -16,6 +16,7 @@ import {
   loadPageFromLegacy,
   removePageSnapshot,
   validateSnapshotPages,
+  StagedSnapshotWriter,
   LEGACY_SNAPSHOT_MAX_BYTES,
 } from "./snapshot.js";
 
@@ -469,6 +470,303 @@ describe("validateSnapshotPages", () => {
     const meta = await loadSnapshotMeta(tmpDir, fileKey);
     const missing = validateSnapshotPages(tmpDir, fileKey, meta!);
     expect(missing.size).toBe(3);
+  });
+});
+
+describe("StagedSnapshotWriter", () => {
+  let tmpDir: string;
+  const fileKey = "testFile123";
+
+  beforeEach(async () => {
+    tmpDir = await mkdtemp(join(tmpdir(), "snapshot-staging-test-"));
+  });
+
+  afterEach(async () => {
+    await rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it("commit atomically swaps staging to live", async () => {
+    const writer = new StagedSnapshotWriter(tmpDir, fileKey);
+    const nodeA = makePageNode("0:1", "Page A");
+    const nodeB = makePageNode("0:2", "Page B");
+
+    await writer.savePage("Page A", nodeA);
+    await writer.savePage("Page B", nodeB);
+    await writer.commit({
+      timestamp: "2026-01-01T00:00:00Z",
+      pageNames: ["Page A", "Page B"],
+    });
+
+    const meta = await loadSnapshotMeta(tmpDir, fileKey);
+    expect(meta).not.toBeNull();
+    expect(meta!.pageNames).toEqual(["Page A", "Page B"]);
+
+    const loadedA = await loadPage(tmpDir, fileKey, "Page A");
+    expect(loadedA).toEqual(nodeA);
+    const loadedB = await loadPage(tmpDir, fileKey, "Page B");
+    expect(loadedB).toEqual(nodeB);
+
+    // No staging or backup dirs remain
+    expect(existsSync(join(tmpDir, `${fileKey}.next`))).toBe(false);
+    expect(existsSync(join(tmpDir, `${fileKey}.old`))).toBe(false);
+  });
+
+  it("commit replaces existing live directory atomically", async () => {
+    // Create existing live snapshot
+    await savePage(tmpDir, fileKey, "Old Page", makePageNode("0:0", "Old Page"));
+    await saveSnapshotMeta(tmpDir, fileKey, {
+      timestamp: "2025-01-01T00:00:00Z",
+      pageNames: ["Old Page"],
+    });
+
+    // Stage new data
+    const writer = new StagedSnapshotWriter(tmpDir, fileKey);
+    const nodeA = makePageNode("0:1", "New Page A");
+    await writer.savePage("New Page A", nodeA);
+    await writer.commit({
+      timestamp: "2026-01-01T00:00:00Z",
+      pageNames: ["New Page A"],
+    });
+
+    // New data present
+    const meta = await loadSnapshotMeta(tmpDir, fileKey);
+    expect(meta!.pageNames).toEqual(["New Page A"]);
+    expect(await loadPage(tmpDir, fileKey, "New Page A")).toEqual(nodeA);
+
+    // Old page gone (replaced by directory swap)
+    expect(await loadPage(tmpDir, fileKey, "Old Page")).toBeNull();
+  });
+
+  it("commit works when savePage was never called (0 pages)", async () => {
+    const writer = new StagedSnapshotWriter(tmpDir, fileKey);
+    // Commit without any savePage calls (e.g. empty Figma file)
+    await writer.commit({
+      timestamp: "2026-01-01T00:00:00Z",
+      pageNames: [],
+    });
+
+    const meta = await loadSnapshotMeta(tmpDir, fileKey);
+    expect(meta).not.toBeNull();
+    expect(meta!.pageNames).toEqual([]);
+    expect(existsSync(join(tmpDir, `${fileKey}.next`))).toBe(false);
+  });
+
+  it("abort cleans up staging directory", async () => {
+    const writer = new StagedSnapshotWriter(tmpDir, fileKey);
+    await writer.savePage("Page A", makePageNode("0:1", "Page A"));
+
+    expect(existsSync(join(tmpDir, `${fileKey}.next`))).toBe(true);
+
+    await writer.abort();
+
+    expect(existsSync(join(tmpDir, `${fileKey}.next`))).toBe(false);
+  });
+
+  it("abort is safe when no staging dir exists", async () => {
+    const writer = new StagedSnapshotWriter(tmpDir, fileKey);
+    await writer.abort(); // should not throw
+  });
+
+  it("leaves no .tmp, .next, or .old artifacts after commit", async () => {
+    const writer = new StagedSnapshotWriter(tmpDir, fileKey);
+    await writer.savePage("Page A", makePageNode("0:1", "Page A"));
+    await writer.commit({
+      timestamp: "2026-01-01T00:00:00Z",
+      pageNames: ["Page A"],
+    });
+
+    const topFiles = await readdir(tmpDir);
+    const artifacts = topFiles.filter(
+      (f) => f.endsWith(".next") || f.endsWith(".old") || f.endsWith(".tmp"),
+    );
+    expect(artifacts).toEqual([]);
+
+    const dirFiles = await readdir(join(tmpDir, fileKey));
+    expect(dirFiles.filter((f) => f.endsWith(".tmp"))).toEqual([]);
+
+    const pageFiles = await readdir(join(tmpDir, fileKey, "pages"));
+    expect(pageFiles.filter((f) => f.endsWith(".tmp"))).toEqual([]);
+  });
+
+  describe("recover", () => {
+    it("completes swap when crash after live→backup (backup + staging, no live)", async () => {
+      const backupDir = join(tmpDir, `${fileKey}.old`);
+      const stagingDir = join(tmpDir, `${fileKey}.next`);
+
+      // Create backup (old live)
+      await mkdir(join(backupDir, "pages"), { recursive: true });
+      await writeFile(join(backupDir, "meta.json"), JSON.stringify({
+        timestamp: "2025-01-01T00:00:00Z", fileKey, pageNames: ["Old"],
+      }));
+
+      // Create staging (complete)
+      await mkdir(join(stagingDir, "pages"), { recursive: true });
+      await writeFile(
+        join(stagingDir, "pages", `${hashPageName("New")}.json`),
+        JSON.stringify(makePageNode("0:1", "New")),
+      );
+      await writeFile(join(stagingDir, "meta.json"), JSON.stringify({
+        timestamp: "2026-01-01T00:00:00Z", fileKey, pageNames: ["New"],
+      }));
+
+      await StagedSnapshotWriter.recover(tmpDir, fileKey);
+
+      const meta = await loadSnapshotMeta(tmpDir, fileKey);
+      expect(meta!.pageNames).toEqual(["New"]);
+      expect(existsSync(stagingDir)).toBe(false);
+      expect(existsSync(backupDir)).toBe(false);
+    });
+
+    it("removes leftover backup when live already swapped (backup + live)", async () => {
+      const backupDir = join(tmpDir, `${fileKey}.old`);
+
+      // Create live (already swapped)
+      await savePage(tmpDir, fileKey, "Page A", makePageNode("0:1", "Page A"));
+      await saveSnapshotMeta(tmpDir, fileKey, {
+        timestamp: "2026-01-01T00:00:00Z", pageNames: ["Page A"],
+      });
+
+      // Leftover backup
+      await mkdir(join(backupDir, "pages"), { recursive: true });
+      await writeFile(join(backupDir, "meta.json"), JSON.stringify({
+        timestamp: "2025-01-01T00:00:00Z", fileKey, pageNames: ["Old"],
+      }));
+
+      await StagedSnapshotWriter.recover(tmpDir, fileKey);
+
+      expect(existsSync(backupDir)).toBe(false);
+      const meta = await loadSnapshotMeta(tmpDir, fileKey);
+      expect(meta!.pageNames).toEqual(["Page A"]);
+    });
+
+    it("restores backup when both live and staging are gone (backup only)", async () => {
+      const backupDir = join(tmpDir, `${fileKey}.old`);
+
+      await mkdir(join(backupDir, "pages"), { recursive: true });
+      await writeFile(
+        join(backupDir, "pages", `${hashPageName("Restored")}.json`),
+        JSON.stringify(makePageNode("0:1", "Restored")),
+      );
+      await writeFile(join(backupDir, "meta.json"), JSON.stringify({
+        timestamp: "2025-01-01T00:00:00Z", fileKey, pageNames: ["Restored"],
+      }));
+
+      await StagedSnapshotWriter.recover(tmpDir, fileKey);
+
+      const meta = await loadSnapshotMeta(tmpDir, fileKey);
+      expect(meta!.pageNames).toEqual(["Restored"]);
+      expect(existsSync(backupDir)).toBe(false);
+    });
+
+    it("completes swap when staging is complete but swap never started (live + complete staging)", async () => {
+      // Create live (old snapshot)
+      await savePage(tmpDir, fileKey, "Old Page", makePageNode("0:0", "Old Page"));
+      await saveSnapshotMeta(tmpDir, fileKey, {
+        timestamp: "2025-01-01T00:00:00Z", pageNames: ["Old Page"],
+      });
+
+      // Create complete staging (new snapshot, crash before swap)
+      const stagingDir = join(tmpDir, `${fileKey}.next`);
+      await mkdir(join(stagingDir, "pages"), { recursive: true });
+      await writeFile(
+        join(stagingDir, "pages", `${hashPageName("New Page")}.json`),
+        JSON.stringify(makePageNode("0:1", "New Page")),
+      );
+      await writeFile(join(stagingDir, "meta.json"), JSON.stringify({
+        timestamp: "2026-01-01T00:00:00Z", fileKey, pageNames: ["New Page"],
+      }));
+
+      await StagedSnapshotWriter.recover(tmpDir, fileKey);
+
+      // Should have completed the swap: new data is live, old data is gone
+      const meta = await loadSnapshotMeta(tmpDir, fileKey);
+      expect(meta!.pageNames).toEqual(["New Page"]);
+      expect(await loadPage(tmpDir, fileKey, "New Page")).toEqual(makePageNode("0:1", "New Page"));
+      expect(await loadPage(tmpDir, fileKey, "Old Page")).toBeNull();
+      expect(existsSync(stagingDir)).toBe(false);
+      expect(existsSync(join(tmpDir, `${fileKey}.old`))).toBe(false);
+    });
+
+    it("discards incomplete staging when live is intact (live + staging)", async () => {
+      // Create live
+      await savePage(tmpDir, fileKey, "Page A", makePageNode("0:1", "Page A"));
+      await saveSnapshotMeta(tmpDir, fileKey, {
+        timestamp: "2025-01-01T00:00:00Z", pageNames: ["Page A"],
+      });
+
+      // Create incomplete staging
+      const stagingDir = join(tmpDir, `${fileKey}.next`);
+      await mkdir(join(stagingDir, "pages"), { recursive: true });
+
+      await StagedSnapshotWriter.recover(tmpDir, fileKey);
+
+      expect(existsSync(stagingDir)).toBe(false);
+      const meta = await loadSnapshotMeta(tmpDir, fileKey);
+      expect(meta!.pageNames).toEqual(["Page A"]);
+    });
+
+    it("discards incomplete staging when no live exists (staging without meta.json)", async () => {
+      const stagingDir = join(tmpDir, `${fileKey}.next`);
+      // Create staging dir with pages but NO meta.json (crash mid-write on first run)
+      await mkdir(join(stagingDir, "pages"), { recursive: true });
+      await writeFile(
+        join(stagingDir, "pages", `${hashPageName("Page A")}.json`),
+        JSON.stringify(makePageNode("0:1", "Page A")),
+      );
+
+      await StagedSnapshotWriter.recover(tmpDir, fileKey);
+
+      // Incomplete staging should be discarded, not promoted
+      expect(existsSync(stagingDir)).toBe(false);
+      expect(existsSync(join(tmpDir, fileKey))).toBe(false);
+    });
+
+    it("restores backup when staging is incomplete (backup + incomplete staging, no live)", async () => {
+      const backupDir = join(tmpDir, `${fileKey}.old`);
+      const stagingDir = join(tmpDir, `${fileKey}.next`);
+
+      // Create backup (old live)
+      await mkdir(join(backupDir, "pages"), { recursive: true });
+      await writeFile(join(backupDir, "meta.json"), JSON.stringify({
+        timestamp: "2025-01-01T00:00:00Z", fileKey, pageNames: ["Old"],
+      }));
+
+      // Create incomplete staging (no meta.json)
+      await mkdir(join(stagingDir, "pages"), { recursive: true });
+
+      await StagedSnapshotWriter.recover(tmpDir, fileKey);
+
+      // Should discard staging and restore backup
+      expect(existsSync(stagingDir)).toBe(false);
+      expect(existsSync(backupDir)).toBe(false);
+      const meta = await loadSnapshotMeta(tmpDir, fileKey);
+      expect(meta!.pageNames).toEqual(["Old"]);
+    });
+
+    it("promotes staging when no live exists (staging only, first run crash)", async () => {
+      const stagingDir = join(tmpDir, `${fileKey}.next`);
+      await mkdir(join(stagingDir, "pages"), { recursive: true });
+      await writeFile(
+        join(stagingDir, "pages", `${hashPageName("Page A")}.json`),
+        JSON.stringify(makePageNode("0:1", "Page A")),
+      );
+      await writeFile(join(stagingDir, "meta.json"), JSON.stringify({
+        timestamp: "2026-01-01T00:00:00Z", fileKey, pageNames: ["Page A"],
+      }));
+
+      await StagedSnapshotWriter.recover(tmpDir, fileKey);
+
+      const meta = await loadSnapshotMeta(tmpDir, fileKey);
+      expect(meta!.pageNames).toEqual(["Page A"]);
+      expect(existsSync(stagingDir)).toBe(false);
+    });
+
+    it("is a no-op when no artifacts exist", async () => {
+      await StagedSnapshotWriter.recover(tmpDir, fileKey);
+      // Should not throw or create any directories
+      const files = await readdir(tmpDir);
+      expect(files).toEqual([]);
+    });
   });
 });
 

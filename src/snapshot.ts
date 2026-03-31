@@ -554,3 +554,162 @@ export async function saveSnapshot(
   // Clean up legacy file if it exists
   await removeLegacySnapshot(dir, fileKey);
 }
+
+/**
+ * Staged snapshot writer for atomic multi-page updates.
+ *
+ * Pages are written to a staging directory (`{fileKey}.next/`), then
+ * atomically swapped into the live directory on commit. This prevents
+ * inconsistent snapshots (mix of old and new pages) when the process
+ * crashes mid-write.
+ *
+ * Directory layout during staged write:
+ *   snapshots/{fileKey}/          ← live (read-only during staging)
+ *   snapshots/{fileKey}.next/     ← staging (new pages written here)
+ *   snapshots/{fileKey}.old/      ← backup (transient, during swap only)
+ */
+export class StagedSnapshotWriter {
+  private readonly liveDir: string;
+  private readonly stagingDir: string;
+  private readonly backupDir: string;
+  private readonly stagingPagesDir: string;
+  private stagingDirCreated = false;
+
+  constructor(
+    private readonly dir: string,
+    private readonly fileKey: string,
+  ) {
+    this.liveDir = join(dir, fileKey);
+    this.stagingDir = join(dir, `${fileKey}.next`);
+    this.backupDir = join(dir, `${fileKey}.old`);
+    this.stagingPagesDir = join(this.stagingDir, "pages");
+  }
+
+  private async ensureStagingDir(): Promise<void> {
+    if (!this.stagingDirCreated) {
+      await mkdir(this.stagingPagesDir, { recursive: true });
+      this.stagingDirCreated = true;
+    }
+  }
+
+  /**
+   * Save a page to the staging directory.
+   */
+  async savePage(pageName: string, node: FigmaNode): Promise<void> {
+    await this.ensureStagingDir();
+    const filePath = join(this.stagingPagesDir, `${hashPageName(pageName)}.json`);
+    try {
+      await writeFileAtomic(filePath, JSON.stringify(node, null, 2));
+    } catch (err) {
+      if (err instanceof RangeError) {
+        await writeNodeStreamAtomic(filePath, node);
+      } else {
+        throw err;
+      }
+    }
+  }
+
+  /**
+   * Commit the staged snapshot: write meta to staging, then atomically
+   * swap staging → live.
+   *
+   * Swap sequence:
+   *   1. Remove leftover .old (from previous crash)
+   *   2. Rename live → .old
+   *   3. Rename .next → live
+   *   4. Remove .old
+   *
+   * Any crash between steps is recoverable via `recover()`.
+   */
+  async commit(meta: Omit<SnapshotMeta, "fileKey">): Promise<void> {
+    // Ensure staging dir exists even if savePage() was never called
+    // (e.g. fetchPagesIter yielded 0 pages)
+    await this.ensureStagingDir();
+
+    const data: SnapshotMeta = { ...meta, fileKey: this.fileKey };
+    await writeFileAtomic(
+      join(this.stagingDir, "meta.json"),
+      JSON.stringify(data, null, 2),
+    );
+
+    // Step 1: Clean up leftover backup from a previous crash
+    if (existsSync(this.backupDir)) {
+      await rm(this.backupDir, { recursive: true, force: true });
+    }
+    // Step 2: Move live → backup (preserves live until staging is ready)
+    if (existsSync(this.liveDir)) {
+      await rename(this.liveDir, this.backupDir);
+    }
+    // Step 3: Promote staging → live
+    await rename(this.stagingDir, this.liveDir);
+    // Step 4: Remove backup
+    if (existsSync(this.backupDir)) {
+      await rm(this.backupDir, { recursive: true, force: true });
+    }
+  }
+
+  /**
+   * Abort the staged write, cleaning up the staging directory.
+   */
+  async abort(): Promise<void> {
+    if (existsSync(this.stagingDir)) {
+      await rm(this.stagingDir, { recursive: true, force: true });
+    }
+  }
+
+  /**
+   * Recover from a partial staging operation (e.g. after a process crash).
+   * Should be called before reading snapshot state.
+   *
+   * Handles all crash scenarios:
+   *   - Crash during staging write → discard incomplete staging
+   *   - Crash after live→backup but before staging→live → complete swap
+   *   - Crash after swap but before backup removal → remove backup
+   *   - Crash after live→backup with staging lost → restore backup
+   */
+  static async recover(dir: string, fileKey: string): Promise<void> {
+    const liveDir = join(dir, fileKey);
+    const stagingDir = join(dir, `${fileKey}.next`);
+    const backupDir = join(dir, `${fileKey}.old`);
+
+    const hasLive = existsSync(liveDir);
+    const hasStaging = existsSync(stagingDir);
+    const hasBackup = existsSync(backupDir);
+
+    // A staging directory is considered complete if it contains meta.json.
+    // Without meta.json, the staging snapshot is incomplete and must be discarded.
+    const stagingComplete = hasStaging && existsSync(join(stagingDir, "meta.json"));
+
+    if (hasBackup && !hasLive && hasStaging && stagingComplete) {
+      // Crash between live→backup and staging→live: complete the swap
+      await rename(stagingDir, liveDir);
+      await rm(backupDir, { recursive: true, force: true });
+    } else if (hasBackup && !hasLive && hasStaging && !stagingComplete) {
+      // Crash between live→backup and staging→live, but staging is incomplete:
+      // discard staging and restore backup
+      await rm(stagingDir, { recursive: true, force: true });
+      await rename(backupDir, liveDir);
+    } else if (hasBackup && hasLive) {
+      // Crash after staging→live: just clean up backup
+      await rm(backupDir, { recursive: true, force: true });
+    } else if (hasBackup && !hasLive && !hasStaging) {
+      // Crash after live→backup with staging lost: restore backup
+      await rename(backupDir, liveDir);
+    } else if (hasStaging && hasLive && stagingComplete) {
+      // Crash after fully writing staging but before swap began:
+      // complete the swap to avoid losing the new snapshot update
+      await rename(liveDir, backupDir);
+      await rename(stagingDir, liveDir);
+      await rm(backupDir, { recursive: true, force: true });
+    } else if (hasStaging && hasLive) {
+      // Crash during staging write with live intact and incomplete staging: discard
+      await rm(stagingDir, { recursive: true, force: true });
+    } else if (hasStaging && !hasLive && stagingComplete) {
+      // Only staging exists and is complete: promote it
+      await rename(stagingDir, liveDir);
+    } else if (hasStaging && !hasLive && !stagingComplete) {
+      // Only staging exists but is incomplete: discard it
+      await rm(stagingDir, { recursive: true, force: true });
+    }
+  }
+}
