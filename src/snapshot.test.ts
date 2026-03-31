@@ -201,6 +201,25 @@ describe("loadSnapshotMeta validation", () => {
     expect(existsSync(metaFile)).toBe(false);
   });
 
+  it("returns null and deletes file when versionId is not a string", async () => {
+    const dir = join(tmpDir, fileKey);
+    await mkdir(dir, { recursive: true });
+    const metaFile = join(dir, "meta.json");
+    await writeFile(
+      metaFile,
+      JSON.stringify({
+        timestamp: "2026-01-01T00:00:00Z",
+        fileKey,
+        versionId: 123,
+        pageNames: ["Page A"],
+      }),
+    );
+
+    const meta = await loadSnapshotMeta(tmpDir, fileKey);
+    expect(meta).toBeNull();
+    expect(existsSync(metaFile)).toBe(false);
+  });
+
   it("returns null and deletes file when fileKey does not match", async () => {
     const dir = join(tmpDir, fileKey);
     await mkdir(dir, { recursive: true });

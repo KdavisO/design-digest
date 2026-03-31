@@ -113,7 +113,10 @@ function isValidSnapshotMeta(data: unknown): data is SnapshotMeta {
     typeof obj.timestamp === "string" &&
     typeof obj.fileKey === "string" &&
     Array.isArray(obj.pageNames) &&
-    obj.pageNames.every((p: unknown) => typeof p === "string")
+    obj.pageNames.every((p: unknown) => typeof p === "string") &&
+    (!("versionId" in obj) ||
+      obj.versionId === undefined ||
+      typeof obj.versionId === "string")
   );
 }
 
