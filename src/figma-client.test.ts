@@ -859,18 +859,26 @@ describe("fetchFileName", () => {
     expect(name).toBe("Design System v2");
   });
 
-  it("returns undefined on API failure", async () => {
+  it("returns undefined and logs error on API failure", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
       new Response("Not Found", { status: 404 }),
     );
     const name = await fetchFileName("token", "bad-key");
     expect(name).toBeUndefined();
+    expect(errorSpy).toHaveBeenCalledOnce();
+    expect(errorSpy.mock.calls[0][0]).toContain("bad-key");
   });
 
-  it("returns undefined on network error", async () => {
-    vi.spyOn(globalThis, "fetch").mockRejectedValueOnce(new Error("Network error"));
+  it("returns undefined and logs error on network error", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const networkError = new Error("Network error");
+    vi.spyOn(globalThis, "fetch").mockRejectedValueOnce(networkError);
     const name = await fetchFileName("token", "abc123");
     expect(name).toBeUndefined();
+    expect(errorSpy).toHaveBeenCalledOnce();
+    expect(errorSpy.mock.calls[0][0]).toContain("abc123");
+    expect(errorSpy.mock.calls[0][1]).toBe(networkError);
   });
 });
 
