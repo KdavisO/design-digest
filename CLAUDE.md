@@ -13,6 +13,8 @@ Figma デザインファイルの変更を1日1回自動検出し、Slack に通
 ## Commands
 - `npm run diff` — メイン実行
 - `npm run diff:dry-run` — Slack通知なしで実行
+- `npm run design-check` — MCPレスポンスJSONを `--input`（または `--input-dir`）で指定して実行する Figma デザイン差分チェック
+- `npm run design-check:dry-run` — MCPレスポンスJSONを `--input`（または `--input-dir`）で指定して実行する、Slack通知なしのデザイン差分チェック
 - `npm test` — テスト実行
 - `npm run lint` — lint実行
 - `npm run typecheck` — 型チェック
