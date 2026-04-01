@@ -79,7 +79,8 @@ export async function fetchFileName(
   try {
     const file = await fetchFile(token, fileKey, 1);
     return file.name;
-  } catch {
+  } catch (err) {
+    console.error(`Failed to fetch file name for ${fileKey}:`, err);
     return undefined;
   }
 }
