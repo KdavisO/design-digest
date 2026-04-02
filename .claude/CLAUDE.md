@@ -26,7 +26,7 @@ GitHub Actions の schedule cron で平日 10:00 JST に実行される。
 - ESM（`"type": "module"`）で統一。インポートは `.js` 拡張子付き
 - `tsx` で直接実行（ビルドステップなし）
 - テストファイルはソースと同階層に `*.test.ts` として配置
-- 環境変数の読み込みは `src/config.ts` の `loadConfig()` に集約
+- 環境変数の読み込みは、定時差分検出フロー（`src/diff.ts`）では `src/config.ts` の `loadConfig()` に集約
 
 ### セキュリティ
 
@@ -60,7 +60,7 @@ GitHub Actions の schedule cron で平日 10:00 JST に実行される。
 ```
 # 必須
 FIGMA_TOKEN=            # Figma Personal Access Token
-FIGMA_FILE_KEY=         # 監視対象の Figma ファイルキー（カンマ区切りで複数指定可）
+FIGMA_FILE_KEY=         # 監視対象の Figma ファイルキー（diff.ts はカンマ区切りで複数指定可 / design-check は環境変数では単一キーのみ）
 
 # オプション: Figma 取得設定
 FIGMA_WATCH_PAGES=      # フィルタ対象ページ（カンマ区切り）
