@@ -325,6 +325,87 @@ describe("loadSnapshotMeta validation", () => {
   });
 });
 
+describe("legacy snapshot shape validation", () => {
+  let tmpDir: string;
+  const fileKey = "testFile123";
+
+  beforeEach(async () => {
+    tmpDir = await mkdtemp(join(tmpdir(), "snapshot-shape-test-"));
+  });
+
+  afterEach(async () => {
+    await rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it("loadSnapshot returns null and removes file when legacy snapshot has invalid shape", async () => {
+    const legacyPath = join(tmpDir, `${fileKey}.json`);
+    // Missing required fields (no timestamp, no fileKey, no pages)
+    await writeFile(legacyPath, JSON.stringify({ foo: "bar" }));
+
+    const loaded = await loadSnapshot(tmpDir, fileKey);
+    expect(loaded).toBeNull();
+    expect(existsSync(legacyPath)).toBe(false);
+  });
+
+  it("loadSnapshot returns null when legacy snapshot pages contain invalid nodes", async () => {
+    const legacyPath = join(tmpDir, `${fileKey}.json`);
+    await writeFile(
+      legacyPath,
+      JSON.stringify({
+        timestamp: "2026-01-01T00:00:00Z",
+        fileKey,
+        pages: { "Page 1": { notANode: true } },
+      }),
+    );
+
+    const loaded = await loadSnapshot(tmpDir, fileKey);
+    expect(loaded).toBeNull();
+    expect(existsSync(legacyPath)).toBe(false);
+  });
+
+  it("loadPageFromLegacy returns null and removes file when legacy snapshot has invalid shape", async () => {
+    const legacyPath = join(tmpDir, `${fileKey}.json`);
+    await writeFile(legacyPath, JSON.stringify({ random: "data" }));
+
+    const result = await loadPageFromLegacy(tmpDir, fileKey, "Page 1");
+    expect(result.page).toBeNull();
+    expect(result.meta).toBeNull();
+    expect(existsSync(legacyPath)).toBe(false);
+  });
+});
+
+describe("page snapshot shape validation", () => {
+  let tmpDir: string;
+  const fileKey = "testFile123";
+
+  beforeEach(async () => {
+    tmpDir = await mkdtemp(join(tmpdir(), "page-shape-test-"));
+  });
+
+  afterEach(async () => {
+    await rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it("loadPage returns null when page file contains invalid node shape", async () => {
+    // Save a valid page first to create directory structure, then overwrite with invalid data
+    await savePage(tmpDir, fileKey, "Page A", makePageNode("0:1", "Page A"));
+    const pagesDir = join(tmpDir, fileKey, "pages");
+    const pageFile = join(pagesDir, `${hashPageName("Page A")}.json`);
+    await writeFile(pageFile, JSON.stringify({ notAValidNode: true }));
+
+    const loaded = await loadPage(tmpDir, fileKey, "Page A");
+    expect(loaded).toBeNull();
+  });
+
+  it("loadPage returns valid node when page file has correct shape", async () => {
+    const node = makePageNode("0:1", "Page A");
+    await savePage(tmpDir, fileKey, "Page A", node);
+
+    const loaded = await loadPage(tmpDir, fileKey, "Page A");
+    expect(loaded).toEqual(node);
+  });
+});
+
 describe("legacy snapshot size guard", () => {
   let tmpDir: string;
   const fileKey = "testFile123";
