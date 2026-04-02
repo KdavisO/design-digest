@@ -11,80 +11,95 @@
 
 ## グループ定義
 
-<!-- プロジェクトに合わせてグループを定義してください -->
+### コア処理（差分検出・スナップショット）
 
-### フロントエンド
-
-- **変更領域**: `src/components/`, `src/pages/`, `src/styles/`
-- **競合リスクが高いファイル**: `src/app/layout.tsx`
+- **変更領域**: `src/diff.ts`, `src/diff-engine.ts`, `src/snapshot.ts`, `src/config.ts`, `src/json-utils.ts`
+- **競合リスクが高いファイル**: `src/diff-engine.ts`, `src/snapshot.ts`
 
 | Issue | 概要 | スコープ |
 |-------|------|----------|
-| <!-- #XX --> | <!-- 例: ダッシュボード画面の追加 --> | <!-- 中 --> |
+| #146 | snapshot.ts の JSON.parse バリデーション強化を検討 | 小 |
 
-### バックエンド / API
+### Figma API・データ取得
 
-- **変更領域**: `src/api/`, `src/server/`
-- **競合リスクが高いファイル**: `src/api/` 内のルート定義ファイル
-
-| Issue | 概要 | スコープ |
-|-------|------|----------|
-| <!-- #XX --> | <!-- 例: 認証APIの追加 --> | <!-- 中 --> |
-
-### データベース
-
-- **変更領域**: `supabase/migrations/`, `src/lib/database.types.ts`
-- **競合リスクが高いファイル**: `supabase/migrations/` 内のタイムスタンプ競合
-- **注意**: DB マイグレーションを含む Issue は 1 セット内で最大 1 件まで
+- **変更領域**: `src/figma-client.ts`, `src/figma-schemas.ts`, `src/adapters/`
+- **競合リスクが高いファイル**: `src/figma-client.ts`, `src/adapters/figma-data-adapter.ts`
 
 | Issue | 概要 | スコープ |
 |-------|------|----------|
-| <!-- #XX --> | <!-- 例: ユーザーテーブルにカラム追加 --> | <!-- 小 --> |
+| #81 | Figma MCP ヘッドレス対応の再調査 | 中 |
+| #65 | Figma MCP の GitHub Actions 統合 | 大 |
+| #7 | デザイントークン同期 Figma Variables API | 大 |
 
-### インフラ / CI・CD
+### 通知・外部連携
 
-- **変更領域**: `.github/workflows/`, `Dockerfile`, 設定ファイル
-- **競合リスクが高いファイル**: `.github/workflows/ci.yml`
+- **変更領域**: `src/notify.ts`, `src/claude-summary.ts`, `src/backlog-client.ts`, `src/github-issue-client.ts`
+- **競合リスクが高いファイル**: `src/notify.ts`
 
 | Issue | 概要 | スコープ |
 |-------|------|----------|
-| <!-- #XX --> | <!-- 例: デプロイワークフローの追加 --> | <!-- 中 --> |
+| #4 | Discord / Microsoft Teams 通知対応 | 中 |
+
+### テスト・品質
+
+- **変更領域**: `src/**/*.test.ts`, `vitest.config.ts`
+- **競合リスクが高いファイル**: なし（テストファイルは対応する本体ファイルに紐づく）
+
+| Issue | 概要 | スコープ |
+|-------|------|----------|
+| #5 | VRT Visual Regression Testing の実装 | 大 |
+
+### CI / GitHub Actions
+
+- **変更領域**: `.github/workflows/`
+- **競合リスクが高いファイル**: `.github/workflows/figma-diff.yml`
+
+| Issue | 概要 | スコープ |
+|-------|------|----------|
+| #65 | Figma MCP の GitHub Actions 統合 | 大 |
 
 ### ドキュメント
 
-- **変更領域**: `docs/`, `README.md`
+- **変更領域**: `docs/`, `CLAUDE.md`, `.claude/`
 - **競合リスクが高いファイル**: なし（低リスク）
 
 | Issue | 概要 | スコープ |
 |-------|------|----------|
-| <!-- #XX --> | <!-- 例: セットアップガイドの更新 --> | <!-- 小 --> |
+| #151 | issue-groups.md にプロジェクト固有の Issue グループを定義 | 小 |
+| #150 | project-structure.md に実際の構造を記載 | 小 |
+| #149 | CLAUDE.md にプロジェクト固有情報を記載 | 小 |
 
-### 共通ライブラリ
+### デザインツール拡張
 
-- **変更領域**: `src/lib/`
-- **競合リスクが高いファイル**: `src/lib/utils.ts`, `src/lib/api-client.ts`
-- **注意**: フロントエンド・バックエンド双方から参照されるため、変更時は両方への影響を確認すること
+- **変更領域**: `src/adapters/`, `src/design-check.ts`, `src/config.ts`
+- **競合リスクが高いファイル**: `src/adapters/index.ts`, `src/config.ts`
 
 | Issue | 概要 | スコープ |
 |-------|------|----------|
-| <!-- #XX --> | <!-- 例: 共通ユーティリティの追加 --> | <!-- 小 --> |
+| #8 | Figma 以外のデザインツール対応 Penpot 等 | 大 |
 
 ## 依存関係
 
-<!-- Issue 間の依存関係がある場合に記載してください -->
-
 ```
-# 例: Issue #10 は Issue #8 の完了が前提
-# #8 (認証API) → #10 (認証UI)
+# #65 は #81 の完了が前提（MCP ヘッドレス対応の調査結果に基づいて統合方針を決定）
+#81 (Figma MCP ヘッドレス対応の再調査) → #65 (Figma MCP の GitHub Actions 統合)
 ```
 
 ## 推奨並列実行パターン
 
-<!-- 過去の実績や推奨の組み合わせがあれば記載してください -->
-
 ```
-# 例: フロントエンド + バックエンド + ドキュメント（3並列）
-# 例: フロントエンド + インフラ（2並列）
+# ドキュメント系3並列（競合リスクなし）
+#149 + #150 + #151（ドキュメント × 3）
+
+# 独立領域の2〜3並列
+#146 (コア処理) + #4 (通知) + #5 (テスト)
+#7 (デザイントークン) + #4 (通知)
+#8 (デザインツール拡張) + #4 (通知)
+
+# 避けるべき組み合わせ
+#65 + #81（依存関係あり、直列実行必須）
+#8 + #7（adapters/ と config.ts が競合）
+#8 + #65（adapters/ が競合）
 ```
 
 ## スコープの判定基準
