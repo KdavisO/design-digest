@@ -1,22 +1,22 @@
 import { readFile } from "node:fs/promises";
 
 /**
- * JSON パースエラー。元のエラーとファイルパスを保持する。
+ * JSON parse error that retains the file path and the underlying cause.
  */
 export class JsonParseError extends Error {
-  constructor(
-    public readonly filePath: string,
-    public readonly cause: unknown,
-  ) {
+  public readonly filePath: string;
+
+  constructor(filePath: string, cause: unknown) {
     const detail = cause instanceof Error ? cause.message : String(cause);
-    super(`Failed to parse JSON from ${filePath}: ${detail}`);
+    super(`Failed to parse JSON from ${filePath}: ${detail}`, { cause });
     this.name = "JsonParseError";
+    this.filePath = filePath;
   }
 }
 
 /**
- * ファイルを読み込み JSON としてパースする。
- * パース失敗時は JsonParseError をスローする（ファイルパス付き）。
+ * Read a file and parse it as JSON.
+ * Throws JsonParseError on parse failure (includes the file path).
  */
 export async function readJsonFile<T>(filePath: string): Promise<T> {
   const raw = await readFile(filePath, "utf-8");

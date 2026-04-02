@@ -114,7 +114,7 @@ async function loadMcpResponses(inputPaths: string[]): Promise<McpFigmaFileRespo
       const parsed = await readJsonFile<McpFigmaFileResponse>(inputPath);
       responses.push(parsed);
     } catch (err) {
-      // readFile の I/O エラーまたは JsonParseError の cause を検査
+      // Inspect underlying I/O error from readFile or the cause of JsonParseError
       const underlying = err instanceof JsonParseError ? err.cause : err;
       if (isPayloadTooLargeError(underlying)) {
         console.error(

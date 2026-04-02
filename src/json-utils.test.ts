@@ -1,31 +1,42 @@
-import { describe, it, expect } from "vitest";
-import { writeFile, rm, mkdir } from "node:fs/promises";
+import { describe, it, expect, afterAll } from "vitest";
+import { writeFile, rm, mkdtemp } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { JsonParseError, readJsonFile } from "./json-utils.js";
 
 describe("readJsonFile", () => {
-  const testDir = join(tmpdir(), "json-utils-test");
+  let testDir: string;
+
+  async function setup(): Promise<string> {
+    if (!testDir) {
+      testDir = await mkdtemp(join(tmpdir(), "json-utils-test-"));
+    }
+    return testDir;
+  }
 
   async function writeTempFile(name: string, content: string): Promise<string> {
-    await mkdir(testDir, { recursive: true });
-    const path = join(testDir, name);
+    const dir = await setup();
+    const path = join(dir, name);
     await writeFile(path, content);
     return path;
   }
+
+  afterAll(async () => {
+    if (testDir) {
+      await rm(testDir, { recursive: true, force: true });
+    }
+  });
 
   it("parses valid JSON file", async () => {
     const path = await writeTempFile("valid.json", '{"key": "value"}');
     const result = await readJsonFile<{ key: string }>(path);
     expect(result).toEqual({ key: "value" });
-    await rm(path);
   });
 
   it("throws JsonParseError for invalid JSON", async () => {
     const path = await writeTempFile("invalid.json", "{broken");
     await expect(readJsonFile(path)).rejects.toThrow(JsonParseError);
     await expect(readJsonFile(path)).rejects.toThrow(/invalid\.json/);
-    await rm(path);
   });
 
   it("JsonParseError preserves filePath and cause", async () => {
@@ -39,10 +50,11 @@ describe("readJsonFile", () => {
       expect(parseErr.filePath).toBe(path);
       expect(parseErr.cause).toBeInstanceOf(SyntaxError);
     }
-    await rm(path);
   });
 
   it("throws ENOENT for missing file", async () => {
-    await expect(readJsonFile("/nonexistent/path.json")).rejects.toThrow(/ENOENT/);
+    const dir = await setup();
+    const missingPath = join(dir, "missing.json");
+    await expect(readJsonFile(missingPath)).rejects.toThrow(/ENOENT/);
   });
 });
