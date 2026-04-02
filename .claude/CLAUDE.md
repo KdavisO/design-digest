@@ -9,7 +9,7 @@ GitHub Actions の schedule cron で平日 10:00 JST に実行される。
 
 - TypeScript (ESM, `tsx` で直接実行)
 - Node.js >= 18
-- npm（パッケージ管理）
+- pnpm（パッケージ管理）
 - deep-diff（JSON 差分検出）
 - zod（バリデーション）
 - dotenv（環境変数読み込み）
