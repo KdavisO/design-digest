@@ -174,6 +174,10 @@ Issue #{issue番号}「{Issueタイトル}」を実装してください。
 5. セルフレビュー・コミット（git-conventions.md に従う）
 
 6. PR作成・自動レビューフロー:
+   - Copilotレビューリクエストの並列実行によるレースコンディションを回避するため、PR作成前にランダムディレイ（3〜8秒）を挿入する:
+     ```bash
+     sleep $((RANDOM % 6 + 3))
+     ```
    - `/issue-pr --auto {issue番号}` を実行してPRを作成する（Copilotレビューリクエスト・レビュー対応ポーリングの「開始」までを含む）
    - `/issue-pr --auto` の成功後、ステータスファイルを更新（原子的書き換え）: 手順2で使用した STATUS_FILE / STATUS_FILE_TMP を用い、`.tmp` に書き出してから `mv` で置き換える手順で、phase を "pr-created" に、pr フィールドにPR番号を設定し、updated_at を現在時刻に更新する
    - Copilotレビューリクエストが成功した場合、`/issue-pr --auto` が自動で `/loop ... /review-respond --auto --max-idle 3` によるレビュー対応ポーリングを開始する。このポーリングはcronでバックグラウンド実行され、`/issue-pr --auto` 自体はポーリング完了まで同期的には待機しない

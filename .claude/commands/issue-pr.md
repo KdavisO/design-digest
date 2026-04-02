@@ -48,10 +48,14 @@ Closes #{issue番号}
 
 6. PR作成後、Copilotレビューをリクエストし、成功を確認する:
 
-   1. レビューリクエストを送信:
+   1. レビューリクエストをPOST送信し、レスポンス/エラーをキャプチャする:
       ```bash
-      gh api repos/{owner}/{repo}/pulls/{PR番号}/requested_reviewers --method POST -f 'reviewers[]=copilot-pull-request-reviewer[bot]'
+      RESPONSE=$(gh api repos/{owner}/{repo}/pulls/{PR番号}/requested_reviewers \
+        --method POST -f 'reviewers[]=copilot-pull-request-reviewer[bot]' 2>&1)
+      EXIT_CODE=$?
       ```
+      - `EXIT_CODE` が 0 以外 → エラーレスポンスを `RESPONSE` からログ出力し、リトライへ
+      - `EXIT_CODE` が 0 → 確認へ
 
    2. リクエストが成功したか確認（`requested_reviewers` にCopilotが含まれているか）:
       ```bash
@@ -60,8 +64,10 @@ Closes #{issue番号}
       - 1以上 → 成功。手順7へ進む
       - 0 → リトライへ
 
-   3. リトライ（最大3回、5秒間隔。初回リクエストを含めて合計4回まで試行する）:
-      - 上記 1 → 2 を繰り返す
+   3. リトライ（最大3回、指数バックオフ。初回リクエストを含めて合計4回まで試行する）:
+      - **POSTリクエスト自体を再送する**（確認のみの再試行ではなく、上記 1 → 2 の全手順を繰り返す）
+      - 待機時間は指数バックオフ: 1回目リトライ=5秒、2回目=10秒、3回目=20秒
+      - 各リトライ時にエラー内容をログ出力する（例: `「リトライ 1/3: 前回エラー: 422 - {エラー内容}」`）
       - 3回リトライ（合計4回試行）しても `requested_reviewers` にCopilotが含まれない場合:
         - `--auto` モード: 「⚠ Copilotレビューリクエストの確認に失敗しました。手動でレビューをリクエストしてください」と警告を出力し、**ポーリングは開始しない**（空振りが確定しているため）
         - 通常モード: 同様の警告を出力
