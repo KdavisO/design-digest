@@ -148,7 +148,13 @@ export async function loadSnapshot(
   if (!(await checkLegacyFileSize(legacyPath))) return null;
 
   try {
-    return await readJsonFile<Snapshot>(legacyPath);
+    const parsed: unknown = await readJsonFile<unknown>(legacyPath);
+    if (!isValidSnapshot(parsed)) {
+      console.warn(`  Invalid legacy snapshot shape at ${legacyPath}, removing corrupt file`);
+      await rm(legacyPath, { force: true }).catch(() => {});
+      return null;
+    }
+    return parsed;
   } catch (err) {
     console.warn(
       `  Failed to load legacy snapshot at ${legacyPath}, treating as missing:`,
@@ -157,6 +163,26 @@ export async function loadSnapshot(
     await rm(legacyPath, { force: true }).catch(() => {});
     return null;
   }
+}
+
+function isValidFigmaNode(data: unknown): data is FigmaNode {
+  if (typeof data !== "object" || data === null) return false;
+  const obj = data as Record<string, unknown>;
+  return (
+    typeof obj.id === "string" &&
+    typeof obj.name === "string" &&
+    typeof obj.type === "string"
+  );
+}
+
+function isValidSnapshot(data: unknown): data is Snapshot {
+  if (typeof data !== "object" || data === null) return false;
+  const obj = data as Record<string, unknown>;
+  if (typeof obj.timestamp !== "string" || typeof obj.fileKey !== "string") return false;
+  if ("versionId" in obj && obj.versionId !== undefined && typeof obj.versionId !== "string") return false;
+  if (typeof obj.pages !== "object" || obj.pages === null || Array.isArray(obj.pages)) return false;
+  const pages = obj.pages as Record<string, unknown>;
+  return Object.values(pages).every(isValidFigmaNode);
 }
 
 function isValidSnapshotMeta(data: unknown): data is SnapshotMeta {
@@ -243,7 +269,12 @@ export async function loadPage(
       })();
   if (!resolvedPath) return null;
   try {
-    return await readJsonFile<FigmaNode>(resolvedPath);
+    const parsed: unknown = await readJsonFile<unknown>(resolvedPath);
+    if (!isValidFigmaNode(parsed)) {
+      console.warn(`  Invalid page snapshot shape for "${pageName}" at ${resolvedPath}, treating as missing`);
+      return null;
+    }
+    return parsed;
   } catch (err) {
     console.warn(`  Failed to load page snapshot "${pageName}":`, err);
     return null;
@@ -263,14 +294,19 @@ export async function loadPageFromLegacy(
   if (!existsSync(legacyPath)) return { page: null, meta: null };
   if (!(await checkLegacyFileSize(legacyPath))) return { page: null, meta: null };
   try {
-    const snapshot = await readJsonFile<Snapshot>(legacyPath);
+    const parsed: unknown = await readJsonFile<unknown>(legacyPath);
+    if (!isValidSnapshot(parsed)) {
+      console.warn(`  Invalid legacy snapshot shape at ${legacyPath}, removing corrupt file`);
+      await rm(legacyPath, { force: true }).catch(() => {});
+      return { page: null, meta: null };
+    }
     const meta: SnapshotMeta = {
-      timestamp: snapshot.timestamp,
-      fileKey: snapshot.fileKey,
-      versionId: snapshot.versionId,
-      pageNames: Object.keys(snapshot.pages),
+      timestamp: parsed.timestamp,
+      fileKey: parsed.fileKey,
+      versionId: parsed.versionId,
+      pageNames: Object.keys(parsed.pages),
     };
-    return { page: snapshot.pages[pageName] ?? null, meta };
+    return { page: parsed.pages[pageName] ?? null, meta };
   } catch (err) {
     console.warn(
       `  Failed to load legacy snapshot for file "${fileKey}", page "${pageName}":`,
