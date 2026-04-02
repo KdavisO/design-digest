@@ -1,8 +1,9 @@
-import { readFile, writeFile, mkdir, rm, stat, rename } from "node:fs/promises";
+import { writeFile, mkdir, rm, stat, rename } from "node:fs/promises";
 import { createWriteStream, existsSync } from "node:fs";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
 import type { FigmaNode } from "./figma-client.js";
+import { readJsonFile } from "./json-utils.js";
 
 /**
  * Write data to a file atomically by writing to a temporary file first,
@@ -147,8 +148,7 @@ export async function loadSnapshot(
   if (!(await checkLegacyFileSize(legacyPath))) return null;
 
   try {
-    const raw = await readFile(legacyPath, "utf-8");
-    return JSON.parse(raw) as Snapshot;
+    return await readJsonFile<Snapshot>(legacyPath);
   } catch (err) {
     console.warn(
       `  Failed to load legacy snapshot at ${legacyPath}, treating as missing:`,
@@ -205,8 +205,7 @@ export async function loadSnapshotMeta(
   const path = metaPath(dir, fileKey);
   if (!existsSync(path)) return null;
   try {
-    const raw = await readFile(path, "utf-8");
-    const parsed: unknown = JSON.parse(raw);
+    const parsed: unknown = await readJsonFile<unknown>(path);
     if (!isValidSnapshotMeta(parsed)) {
       console.warn(`  Invalid snapshot meta shape at ${path}, removing corrupt file`);
       await rm(path, { force: true }).catch(() => {});
@@ -244,8 +243,7 @@ export async function loadPage(
       })();
   if (!resolvedPath) return null;
   try {
-    const raw = await readFile(resolvedPath, "utf-8");
-    return JSON.parse(raw) as FigmaNode;
+    return await readJsonFile<FigmaNode>(resolvedPath);
   } catch (err) {
     console.warn(`  Failed to load page snapshot "${pageName}":`, err);
     return null;
@@ -265,8 +263,7 @@ export async function loadPageFromLegacy(
   if (!existsSync(legacyPath)) return { page: null, meta: null };
   if (!(await checkLegacyFileSize(legacyPath))) return { page: null, meta: null };
   try {
-    const raw = await readFile(legacyPath, "utf-8");
-    const snapshot = JSON.parse(raw) as Snapshot;
+    const snapshot = await readJsonFile<Snapshot>(legacyPath);
     const meta: SnapshotMeta = {
       timestamp: snapshot.timestamp,
       fileKey: snapshot.fileKey,

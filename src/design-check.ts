@@ -18,11 +18,12 @@
  * 5. Sends Slack notification unless DRY_RUN=true
  */
 import "dotenv/config";
-import { readFile, readdir } from "node:fs/promises";
+import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { FigmaMcpAdapter } from "./adapters/figma-mcp-adapter.js";
 import type { McpFigmaFileResponse } from "./adapters/figma-mcp-adapter.js";
 import { isPayloadTooLargeError } from "./figma-client.js";
+import { JsonParseError, readJsonFile } from "./json-utils.js";
 import { loadSnapshot, saveSnapshot } from "./snapshot.js";
 import {
   detectChanges,
@@ -110,11 +111,12 @@ async function loadMcpResponses(inputPaths: string[]): Promise<McpFigmaFileRespo
   const responses: McpFigmaFileResponse[] = [];
   for (const inputPath of inputPaths) {
     try {
-      const rawData = await readFile(inputPath, "utf-8");
-      const parsed: McpFigmaFileResponse = JSON.parse(rawData);
+      const parsed = await readJsonFile<McpFigmaFileResponse>(inputPath);
       responses.push(parsed);
     } catch (err) {
-      if (isPayloadTooLargeError(err)) {
+      // Inspect underlying I/O error from readFile or the cause of JsonParseError
+      const underlying = err instanceof JsonParseError ? err.cause : err;
+      if (isPayloadTooLargeError(underlying)) {
         console.error(
           `Error: Failed to parse ${inputPath} — payload too large.\n` +
           `  Split the MCP response into smaller chunks (per-page) and use multiple --input flags or --input-dir.`,
