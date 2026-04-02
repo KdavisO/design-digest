@@ -16,7 +16,11 @@ export class JsonParseError extends Error {
 
 /**
  * Read a file and parse it as JSON.
- * Throws JsonParseError on parse failure (includes the file path).
+ *
+ * Throws JsonParseError on JSON parse failure (includes the file path).
+ * Note: I/O errors from readFile (e.g. ENOENT, EACCES) are not wrapped and
+ * will be thrown as-is, so callers may need to handle filesystem errors
+ * separately.
  */
 export async function readJsonFile<T>(filePath: string): Promise<T> {
   const raw = await readFile(filePath, "utf-8");
