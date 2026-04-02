@@ -28,8 +28,9 @@
 | Issue | 概要 | スコープ |
 |-------|------|----------|
 | #81 | Figma MCP ヘッドレス対応の再調査 | 中 |
-| #65 | Figma MCP の GitHub Actions 統合 | 大 |
 | #7 | デザイントークン同期 Figma Variables API | 大 |
+
+- 備考: Issue #65（CI / GitHub Actions グループ）で Figma MCP の GitHub Actions 統合を実施する際、本グループのコードも影響を受ける可能性があります。
 
 ### 通知・外部連携
 
