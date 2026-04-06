@@ -1,0 +1,57 @@
+# ===========================================
+# .claudeignore
+# Claude Code が自動スキャン時に無視するファイル
+# .gitignore と同じ書式で記述する
+# ※ 明示的にファイルを指定すれば除外対象でも読み取り可能
+# ===========================================
+
+# --- 依存パッケージ ---
+node_modules/
+.pnp/
+.pnp.js
+
+# --- ビルド成果物 ---
+dist/
+build/
+out/
+.output/
+
+# --- フレームワーク固有のキャッシュ・出力 ---
+.next/
+.nuxt/
+.turbo/
+.vercel/
+.netlify/
+.svelte-kit/
+
+# --- パッケージロックファイル ---
+package-lock.json
+pnpm-lock.yaml
+yarn.lock
+bun.lockb
+
+# --- バイナリ・メディアファイル ---
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.ico
+*.svg
+*.webp
+*.mp4
+*.webm
+*.woff
+*.woff2
+*.ttf
+*.eot
+*.otf
+*.pdf
+
+# --- 環境・秘密情報 ---
+.env
+.env.*
+
+# --- その他 ---
+coverage/
+.nyc_output/
+*.tsbuildinfo

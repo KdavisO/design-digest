@@ -1,0 +1,20 @@
+# Claude Code Docker 自律実行環境
+#
+# 使用方法:
+#   docker compose run --rm claude           # 対話モード
+#   docker compose run -T --rm claude "..."   # CI/非対話モード（TTY無効）
+#
+# 環境変数:
+#   ANTHROPIC_API_KEY: Anthropic API キー（必須）
+#   CLAUDE_CODE_VERSION: Claude Code のバージョン（必須、例: 1.0.0）
+
+services:
+  claude:
+    build:
+      context: .
+      args:
+        - CLAUDE_CODE_VERSION=${CLAUDE_CODE_VERSION:?CLAUDE_CODE_VERSION is required}
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:?ANTHROPIC_API_KEY is required}
+    volumes:
+      - .:/home/claude/workspace

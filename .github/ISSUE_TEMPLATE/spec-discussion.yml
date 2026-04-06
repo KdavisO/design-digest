@@ -1,0 +1,55 @@
+name: 仕様議論
+description: 機能の仕様を議論・確定するためのテンプレート
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        確定した仕様は `docs/specs/` に書き出し、Claude Code が実装時に自動参照できるようにします。
+  - type: textarea
+    id: overview
+    attributes:
+      label: 概要
+      description: この機能が何をするのか、なぜ必要なのかを簡潔に記載
+    validations:
+      required: true
+  - type: textarea
+    id: requirements
+    attributes:
+      label: 要件
+      description: 機能要件・非機能要件を記載
+      value: |
+        ### 機能要件
+
+        - [ ] ...
+
+        ### 非機能要件
+
+        - [ ] ...
+    validations:
+      required: true
+  - type: textarea
+    id: constraints
+    attributes:
+      label: 技術的制約
+      description: 使用すべき/避けるべきライブラリ、既存アーキテクチャとの整合性等
+  - type: textarea
+    id: acceptance-criteria
+    attributes:
+      label: 受け入れ基準
+      description: この仕様が「完了」と判断される条件
+      value: |
+        1. ...
+        2. ...
+    validations:
+      required: true
+  - type: textarea
+    id: file-layout
+    attributes:
+      label: ファイル配置
+      description: 新規作成・変更するファイルのパスと役割
+  - type: textarea
+    id: additional
+    attributes:
+      label: その他
+      description: 補足情報、関連 Issue、参考リンク等

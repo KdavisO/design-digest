@@ -181,6 +181,8 @@ actions-template-sync v2 は、同期時に**ダウンストリーム側の `.te
 
 既存プロジェクトで `.templatesyncignore` の設定を変更したい場合は、**各ダウンストリームリポジトリで `.templatesyncignore` を直接編集**し、その後に同期を実行する。
 
+> **`.claudeignore` に関する注意**: テンプレート側の `.templatesyncignore` に `.claudeignore` が含まれていても、既存ダウンストリームにはその変更が同期されない。`.claudeignore` をプロジェクトに合わせてカスタマイズする場合は、ダウンストリーム側の `.templatesyncignore` にも `.claudeignore` を追加し、テンプレート同期による上書きを防止すること。
+
 ### 既存ダウンストリームの `.gitignore` 上書き防止
 
 テンプレートから `.gitignore` を削除しているが、既存ダウンストリームの `.templatesyncignore` には `.gitignore` が含まれていない可能性がある。上書き防止を確実にするため、各ダウンストリームで以下を確認すること:
