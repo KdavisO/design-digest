@@ -27,7 +27,7 @@ src/
 │   ├── figma-rest-adapter.ts      # REST API アダプター
 │   ├── figma-mcp-adapter.ts       # MCP レスポンスアダプター
 │   └── sanitize-helpers.ts        # ノードのサニタイズ処理
-└── *.test.ts                # テストファイル（ソースと同階層に配置）
+└── *.test.ts                # テストファイル（src/** 配下の各ソースと同階層に配置）
 ```
 
 - テストファイルはソースファイルと同じディレクトリに `*.test.ts` として配置する
@@ -47,8 +47,8 @@ src/
 - パッケージ管理は `pnpm` を使用
 - TypeScript strict モードを有効化（`tsconfig.json`: `"strict": true`）
 - ESM（`"type": "module"`）で統一、`tsx` で直接実行
-- lint: `eslint` + `typescript-eslint`（`npm run lint`）
+- lint: `eslint` + `typescript-eslint`（`pnpm lint`）
   - `@typescript-eslint/no-unused-vars`: `_` プレフィックスの引数・変数は許可
-- 型チェック: `tsc --noEmit`（`npm run typecheck`）
-- テスト: `vitest`（`npm test`）
+- 型チェック: `tsc --noEmit`（`pnpm typecheck`）
+- テスト: `vitest`（`pnpm test`）
 - `any` の使用を避け、型安全性を重視する
