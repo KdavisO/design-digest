@@ -36,4 +36,4 @@ jobs:
           pr_title: "chore: テンプレートリポジトリの更新を反映"
           pr_labels: chore,template-sync
           pr_commit_msg: "chore: sync with template repository"
-          github_token: ${{ secrets.TEMPLATE_SYNC_TOKEN }}
+          source_gh_token: ${{ secrets.TEMPLATE_SYNC_TOKEN }}
