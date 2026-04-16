@@ -1,0 +1,29 @@
+{
+  "mcpServers": {
+    "context7": {
+      "command": "npx",
+      "args": ["-y", "@upstash/context7-mcp@1"]
+    },
+    "semgrep": {
+      "command": "uvx",
+      "args": ["--from", "semgrep-mcp==0.1.0", "semgrep-mcp"]
+    },
+    "brave-search": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-brave-search@1"],
+      "disabled": true,
+      "env": {
+        "BRAVE_API_KEY": "${BRAVE_API_KEY}"
+      }
+    },
+    "o3-search": {
+      "command": "npx",
+      "args": ["-y", "o3-search-mcp@1"],
+      "env": {
+        "OPENAI_API_KEY": "${OPENAI_API_KEY}",
+        "SEARCH_CONTEXT_SIZE": "${SEARCH_CONTEXT_SIZE:-medium}",
+        "REASONING_EFFORT": "${REASONING_EFFORT:-medium}"
+      }
+    }
+  }
+}
