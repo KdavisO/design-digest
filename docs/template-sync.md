@@ -26,7 +26,7 @@
 |---|---|---|
 | 共有ルール | `.claude/rules/git-conventions.md`, `.claude/rules/parallel-workflow.md` | 同期する |
 | 共有コマンド | `.claude/commands/*.md` | 同期する |
-| 共有スキル | `.claude/skills/*.md`（テンプレート提供分） | 同期する |
+| 共有スキル | `.claude/skills/**/SKILL.md`（テンプレート提供分） | 同期する |
 | 共有設定 | `.claude/settings.json` | 同期する |
 | ワークフロー | `.github/workflows/template-sync.yml` | 同期する |
 | プロジェクト固有設定 | `.claude/CLAUDE.md` | **除外** |
@@ -98,8 +98,8 @@ gh workflow run template-sync.yml
 プロジェクト固有のファイルが増えた場合は `.templatesyncignore` に追加する:
 
 ```
-# 例: プロジェクト固有のスキルファイル
-.claude/skills/my-project-specific-skill.md
+# 例: プロジェクト固有のスキルディレクトリ
+.claude/skills/my-project-specific-skill/
 ```
 
 ### 競合が発生した場合
