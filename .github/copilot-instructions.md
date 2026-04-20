@@ -43,11 +43,36 @@ This project uses Claude Code for implementation and self-review. Copilot serves
 
 ## Skip These
 
-- Code style / formatting (unless it directly impacts readability or correctness)
-- Naming conventions (covered by self-review)
-- Import ordering
-- Comment style or documentation completeness
-- Minor refactoring suggestions that don't affect correctness
+The following categories should NOT be flagged in reviews. The guiding principle: **skip stylistic preferences; flag issues that affect correctness, security, reliability, type safety, testability, or architecture/design.**
+
+### Formatting & Style
+
+- Whitespace, indentation style, trailing commas, semicolons
+- Import ordering or grouping
+- Naming conventions (e.g., camelCase vs snake_case) — covered by self-review and, where applicable, linter/tooling
+- Comment style, JSDoc completeness, or documentation wording
+- Minor refactoring suggestions that don't affect correctness (e.g., "extract this into a helper")
+
+### Document & Markdown Consistency
+
+These are style preferences, NOT correctness issues:
+
+- **Heading hierarchy variations**: e.g., a section using 4 subsections vs 5 subsections, or `###` vs `####` for similar content — these do not affect functionality
+- **Reference path style mixing**: e.g., full path (`docs/specs/jwt-auth.md`) vs short name (`jwt-auth.md`) within the same document — both are valid if the target is unambiguous
+- **Markdown formatting differences**: e.g., fenced code block style (`` ``` `` vs `~~~`), list marker style (`-` vs `*`), emphasis style (`**` vs `__`)
+
+### Diff Display Artifacts
+
+- **Do not assume escaped characters in diffs are rendering artifacts.** In standard git/GitHub diffs, displayed content should normally be treated as the actual file content for that commit, and sequences such as `\"` or `\\n` often legitimately appear in string literals, serialized JSON, or other escaped contexts.
+- False positives here are limited to cases where a viewer/rendering layer is ambiguous or where the diff is showing JSON-inside-a-string or another nested escaped representation. If you suspect that, verify using GitHub's **View file** or raw view for the same commit before dismissing or flagging the escaping as a bug.
+
+### Boundary: When Consistency IS a Valid Finding
+
+Flag consistency issues ONLY when they cause one of the following:
+
+- **Broken references**: a path, link, or cross-reference that points to a non-existent target
+- **Contradictory statements**: two sections that make incompatible claims about the same behavior
+- **Misleading examples**: a code example that would fail if copy-pasted (syntax errors, missing imports, wrong API usage)
 
 ## Commit Conventions
 
