@@ -12,7 +12,8 @@ description: 並列実行可能なIssueセットを提案します。
 - 数字のみ（例: `2`）→ 並列数を指定
 - `priority:xxx`（例: `priority:medium`）→ 指定優先度以上のみ対象
 - `exclude:N[,N...]`（例: `exclude:245`, `exclude:245,250`）→ 指定Issue番号を除外（単数・複数どちらも可）
-- 複数指定可（例: `3 priority:medium exclude:245`）
+- `--no-skills` → スキルオーケストレーション全体（スキル自動選択・実行およびPR作成前コードレビューを含む）をスキップし、全Issueで従来の直接実装フローを使用する。選択されたセット内の全チームメイトに `--no-skills` が伝播する
+- 複数指定可（例: `3 priority:medium exclude:245 --no-skills`）
 - `exclude:` の値はカンマ区切りでパースし、空要素は無視し、重複するIssue番号は除外時に一意になるよう正規化する前提とする
 
 デフォルト値:
@@ -20,6 +21,7 @@ description: 並列実行可能なIssueセットを提案します。
 - 並列数: 3
 - 優先度フィルタ: なし（全て対象）
 - 除外Issue: なし
+- スキル適用: あり（`--no-skills` 未指定時。各チームメイトが `/issue-start --auto` のスキルオーケストレーションに従い、Issueの規模・性質に応じてスキルを独立実行する）
 
 ## 手順
 
@@ -75,18 +77,18 @@ gh issue list --state open --limit 100 --json number,title,labels,assignees
 
 ### 推奨セット 1（最推奨）
 
-| # | Issue | 概要 | 領域 | スコープ |
-|---|-------|------|------|----------|
-| 1 | #XXX  | ...  | ...  | 小/中/大 |
-| 2 | #YYY  | ...  | ...  | 小/中/大 |
-| 3 | #ZZZ  | ...  | ...  | 小/中/大 |
+| # | Issue | 概要 | 領域 | スコープ | 適用スキル（見込み） |
+|---|-------|------|------|----------|---------------------|
+| 1 | #XXX  | ...  | ...  | 小/中/大 | {見込みスキル}       |
+| 2 | #YYY  | ...  | ...  | 小/中/大 | {見込みスキル}       |
+| 3 | #ZZZ  | ...  | ...  | 小/中/大 | {見込みスキル}       |
 
 **独立性の根拠**: （変更領域が重複しない理由を記載）
 
-**開始コマンド**:
-/issue-start XXX --parallel
-/issue-start YYY --parallel
-/issue-start ZZZ --parallel
+**開始コマンド**（各チームメイトで `/issue-start --auto` のスキルオーケストレーションを有効にするため `--parallel --auto` を既定とする。スキル適用をスキップしたい場合は `--no-skills` を追加）:
+/issue-start XXX --parallel --auto
+/issue-start YYY --parallel --auto
+/issue-start ZZZ --parallel --auto
 
 ---
 
@@ -99,6 +101,25 @@ gh issue list --state open --limit 100 --json number,title,labels,assignees
 - 各セットに独立性の根拠を必ず記載する
 - `docs/issue-groups.md` に既存の推奨パターンがある場合は優先的に参照する
 - セット内のIssueが `docs/issue-groups.md` に記載されていない場合は、変更対象ファイルを推測して独立性を判断する
+
+#### 「適用スキル（見込み）」列の記入ルール
+
+`/parallel-suggest` のセット選定時点では各Issueの詳細分析を行わないため、ここに表示するスキルは **見込み** に留まる。実際の判定は各チームメイトが `/issue-start --auto` 内のスキルオーケストレーションで確定するため、見込みと実判定が乖離することがある点をユーザーに示す（列名に「（見込み）」を明記する理由）。
+
+見込みスキルはIssueの **ラベル** と **スコープ** から以下のルールで決定する:
+
+- `bug` ラベル付き → `/systematic-debugging → /test-driven-development`（バグ修正カテゴリ）
+- スコープ「大」 → `/brainstorming → /writing-plans → /test-driven-development`（大規模・設計必要カテゴリ）
+- スコープ「中」 → `/writing-plans → /test-driven-development`（中規模・機能追加カテゴリ）
+- スコープ「小」 → なし（小規模・ドキュメントカテゴリ）
+
+`--no-skills` が指定されている場合、全Issueの「適用スキル（見込み）」列を以下のように固定表示する（スキル選択・実行は全チームメイトでスキップされる）:
+
+```
+なし（--no-skills）
+```
+
+カテゴリと適用スキルの確定版定義は `.claude/commands/issue-start.md` の「スキルオーケストレーション」セクションを参照する。本コマンドの「適用スキル（見込み）」は提案時点の参考表示であり、`/issue-start --auto` の判定結果との完全一致は保証しない（`/parallel-suggest` は提案時にIssue本文を精読しないため、スコープ判定基準のファイル数（小=1 / 中=2〜5 / 大=6+）と `issue-start.md` 側のカテゴリ目安（小規模=1〜2 / 中規模=3〜5）とで境界が近接しているIssueではカテゴリが入れ替わり得る）。最終的なカテゴリ判定と適用スキルの確定は `/issue-start --auto` 側を単一の真実ソースとする。
 
 ### 6. 実行確認と開始
 
@@ -132,6 +153,7 @@ gh issue list --state open --limit 100 --json number,title,labels,assignees
    - `team_name`: `parallel-issues`
    - `subagent_type`: `general-purpose`（ファイル編集・Bash実行が必要なため）
    - 手順1で取得したIssue内容をチームメイトへの指示に埋め込む（各チームメイトが個別に `gh issue view` を実行しなくてよいようにする）
+   - 下部「チームメイトへの指示テンプレート」の `{no_skills}` プレースホルダに、`/parallel-suggest` 起動時の `--no-skills` フラグ有無に応じて `true` または `false` を埋め込む（`--no-skills` 指定時は全チームメイト一律 `true`）
 4. 各チームメイトの進捗を監視し、実装・PR作成・ポーリング開始の完了報告を待つ
    - **ポーリング引き継ぎは行わない**。各チームメイトで `/issue-pr --auto` が成功し、**ポーリング開始の完了報告があったPR** については、`/loop ... /review-respond --auto --max-idle 3` が**そのチームメイト自身のセッション**に登録されており、cron発火時は**そのチームメイト自身のtmuxペイン**で `/review-respond` が実行される。これによりユーザーは各ペインでポーリング・コード修正・マージまでの進捗をリアルタイムに観測できる（Agent Teams + worktree 方式の最大の利点）
    - リードはチームメイトから完了報告（実装・PR作成・ポーリング開始まで）を受け取ったものについて、**チームメイトをシャットダウンせずアイドル状態で生存させたままにする**。チームメイトが自走してポーリング→自動マージ→worktreeクリーンアップを完結させるまで介入しない
@@ -160,7 +182,7 @@ gh issue list --state open --limit 100 --json number,title,labels,assignees
 
 **チームメイトへの指示テンプレート:**
 
-```
+````
 Issue #{issue番号}「{Issueタイトル}」を実装してください。
 
 ## Issue内容
@@ -182,19 +204,38 @@ Issue #{issue番号}「{Issueタイトル}」を実装してください。
      pnpm install
    fi
 
-4. 実装前分析（実装着手前に必ず実施）:
+4. 実装前分析・スキルオーケストレーション（実装着手前に必ず実施）:
    - 以下の観点で分析し、結果を会話に出力する:
      1. **エッジケース・異常系シナリオ**: 入力値の境界（null/空/最大値）、競合状態、タイムアウト、権限エラー等
      2. **テストケースの事前特定**: 正常系・異常系・境界値のテストケースを列挙
      3. **設計上の懸念点**: 責務分離、既存コードとの整合性、依存方向
    - 分析結果はコミットメッセージやPR本文に反映する
    - 実装中に外部情報が必要な場合は `web-delegation.md` の判断基準に基づき gemini-analyzer に Web 調査を委譲する（`gemini-analyzer.md` の用途別テンプレートを使用）
+   - **スキル自動選択**: {no_skills} が `false` の場合、`.claude/commands/issue-start.md` の「スキルオーケストレーション」セクションに従い、担当Issueの規模・性質を4カテゴリ（大規模・設計必要 / 中規模・機能追加 / バグ修正 / 小規模・ドキュメント）のいずれかに分類し、該当スキルを決定・出力する。判定結果は以下のフォーマットで会話に出力する:
+     ```
+     スキル自動選択:
+       カテゴリ: {カテゴリ名}
+       判定理由: {1文で判定根拠}
+       適用スキル: {スキル名のリスト、またはなし}
+     ```
+   - {no_skills} が `true` の場合は、スキル自動選択・スキル実行（手順5）・PR作成前コードレビュー（手順6.5）をすべてスキップし、従来の直接実装フローで進める。その旨を会話に出力する:
+     ```
+     スキルスキップ: --no-skills 指定により全スキルをスキップ
+     ```
 
-5. Issue要件に基づいて実装
-   - 実装前分析の結果を踏まえて実装する
+5. スキル実行・実装:
+   - {no_skills} が `false` かつスキルが選択されている場合: `.claude/commands/issue-start.md` の「スキルオーケストレーション」セクションの「スキル実行フロー」に従い、選択されたスキルを順次実行する。各スキルの出力（設計書・実装計画・デバッグ結果等）は次のスキルおよび実装に反映する
+   - {no_skills} が `true` または選択スキルが「なし」（小規模・ドキュメントカテゴリ）の場合: 実装前分析の結果を踏まえて直接実装する
    - 分析で特定したエッジケース・テストケースが実装に反映されていることを確認する
+   - テストフレームワーク未セットアップ時は `/test-driven-development` をスキップし、その旨を出力する（`.claude/commands/issue-start.md` の「テストフレームワーク未セットアップ時の動作」参照）
 
 6. セルフレビュー・コミット（git-conventions.md に従う）
+
+6.5. PR作成前コードレビュー（{no_skills} が `false` の場合のみ）:
+   - `.claude/commands/issue-start.md` の「スキルオーケストレーション」セクションの「PR作成前コードレビュー（オプション）」基準に従い、該当する場合は `/requesting-code-review` を実行する
+   - Critical指摘があれば修正し、再度 `/requesting-code-review` で解消を確認してからコミットする
+   - 該当しない場合（中規模以下かつセキュリティ関連の変更を含まない）はこの手順をスキップする
+   - {no_skills} が `true` の場合は本手順全体をスキップする
 
 7. PR作成・自動レビューフロー:
    - Copilotレビューリクエストの並列実行によるレースコンディションを回避するため、PR作成前にランダムディレイ（3〜8秒）を挿入する:
@@ -234,7 +275,7 @@ Issue #{issue番号}「{Issueタイトル}」を実装してください。
 - 他のチームメイトの担当領域のファイルを変更しないこと: {他チームメイトの担当領域を列挙}
 - worktree が既に存在する場合はエラーメッセージをリードに報告すること
 - **ポーリングが自然停止するまでCWDをworktreeディレクトリに固定すること**（`/review-respond` の worktree削除ポストアクション（手順10-C）がCWD依存のため、途中で `cd` すると自動クリーンアップがスキップされる）
-```
+````
 
 #### フォールバック（従来方式）
 
@@ -243,10 +284,19 @@ Issue #{issue番号}「{Issueタイトル}」を実装してください。
 - 環境変数 `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` が `"1"` でない（未設定を含む）
 - Agent Teams の作成に失敗した場合（エラーメッセージを表示し、コマンド一覧をフォールバックとして出力）
 
-フォールバック時の出力:
+フォールバック時の出力（基本形。各チームメイトで `/issue-start --auto` のスキルオーケストレーションを有効にするため `--parallel --auto` を既定とする）:
 ```
 以下のコマンドを各ターミナルで実行してください:
-/issue-start XXX --parallel
-/issue-start YYY --parallel
-/issue-start ZZZ --parallel
+/issue-start XXX --parallel --auto
+/issue-start YYY --parallel --auto
+/issue-start ZZZ --parallel --auto
+```
+
+`--no-skills` が指定されている場合、各コマンドに `--no-skills` を追加する（`--no-skills` は `--parallel --auto` と併用する場合のみ有効のため、`--auto` は基本形と同様に維持する）:
+
+```
+以下のコマンドを各ターミナルで実行してください:
+/issue-start XXX --parallel --auto --no-skills
+/issue-start YYY --parallel --auto --no-skills
+/issue-start ZZZ --parallel --auto --no-skills
 ```
