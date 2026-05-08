@@ -64,6 +64,13 @@ Agent:
 2. **コミット順序の調整**: 各チームメイトの変更が論理的に独立したコミットになるよう、リードがコミットタイミングを調整する
 3. **相互依存の活用**: API定義の変更とその利用側の変更など、チームメイト間でメッセージをやり取りしてインターフェースを合意できる
 
+### Agent Teams + worktree 方式での権限扱い
+
+`/parallel-suggest` のように Agent Teams + worktree のハイブリッド方式でチームメイトを起動する場合、各チームメイトは独立した worktree で作業するため原則として同一ディレクトリ制約は当てはまらない。ただし以下の権限扱いに注意する:
+
+- **チームメイト起動時は `mode: "bypassPermissions"` を必須とする**。Agent Teams ではチームメイトのツール呼び出し時に発生する権限承認要求がリード側にsurface せずスタックする既知の問題があるため、worktree 内の独立作業で副作用範囲が限定されているケースでは bypass で起動する
+- **`.claude/` 保護は依然有効**: `bypassPermissions` でも `.claude/settings.json` / `.claude/settings.local.json` / `.claude/rules/` / `.claude/CLAUDE.md` 等は承認プロンプトが出る。これら保護対象配下への書き込みが必要な場合は、事前に `permissions.allow` にパススコープ付き許可を設定する。既存ファイルの更新であれば `Edit(.claude/rules/**)`、新規ファイル作成やファイル出力が発生しうる場合は `Write(.claude/rules/**)` も含めて許可する（詳細は `.claude/rules/claude-dir-protection.md`）
+
 ### 使用例: API変更 + フロントエンド対応
 
 ```
